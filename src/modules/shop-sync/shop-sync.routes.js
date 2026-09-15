@@ -91,6 +91,7 @@ const paymentTransactionSchema = z.object({
   paymentMode: z.string(),
   notes: z.string().nullable().optional(),
   createdAt: z.string(),
+  updatedAt: z.string().optional(),
 });
 
 const shopProfileSchema = z.object({

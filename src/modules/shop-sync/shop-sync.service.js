@@ -79,6 +79,11 @@ function paymentTransactionFields(p) {
     paymentMode: p.paymentMode,
     notes: p.notes ?? null,
     localCreatedAt: new Date(p.createdAt),
+    // Unlike product/customer/invoice, this was never wired through here —
+    // every payment ever pushed landed with localUpdatedAt still null, which
+    // is exactly what the phone's pull-merge (DateTime.parse on a required
+    // field) crashes on for every shop with payment history.
+    localUpdatedAt: new Date(p.updatedAt ?? p.createdAt),
   };
 }
 
