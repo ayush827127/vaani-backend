@@ -115,30 +115,42 @@ async function syncData(
       });
     }
 
+    // Items are immutable once created — simplest correct approach is to
+    // replace them wholesale rather than diff/upsert each one. Batched across
+    // *all* invoices (one deleteMany + one createMany) rather than 2 extra
+    // queries per invoice inside the loop above — with real invoice history
+    // that was enough sequential round-trips inside one interactive
+    // transaction to blow past Prisma's timeout and get the transaction
+    // killed mid-sync (surfaced to the client as a bare HTTP 500).
+    const syncedInvoices = [];
     for (const inv of invoices) {
       const synced = await tx.syncedInvoice.upsert({
         where: { shopId_localId: { shopId, localId: inv.localId } },
         update: invoiceFields(inv),
         create: { shopId, localId: inv.localId, ...invoiceFields(inv) },
       });
+      syncedInvoices.push({ inv, invoiceId: synced.id });
+    }
 
-      // Items are immutable once created — simplest correct approach is to
-      // replace them wholesale rather than diff/upsert each one.
-      await tx.syncedInvoiceItem.deleteMany({ where: { invoiceId: synced.id } });
-      if (inv.items?.length) {
-        await tx.syncedInvoiceItem.createMany({
-          data: inv.items.map((item) => ({
-            invoiceId: synced.id,
-            localId: item.localId,
-            localProductId: item.productId,
-            productName: item.productName,
-            quantity: item.quantity,
-            sellingPrice: item.sellingPrice,
-            gstRate: item.gstRate,
-            gstAmount: item.gstAmount,
-            lineTotal: item.lineTotal,
-          })),
-        });
+    if (syncedInvoices.length) {
+      await tx.syncedInvoiceItem.deleteMany({
+        where: { invoiceId: { in: syncedInvoices.map((s) => s.invoiceId) } },
+      });
+      const allItems = syncedInvoices.flatMap(({ inv, invoiceId }) =>
+        (inv.items ?? []).map((item) => ({
+          invoiceId,
+          localId: item.localId,
+          localProductId: item.productId,
+          productName: item.productName,
+          quantity: item.quantity,
+          sellingPrice: item.sellingPrice,
+          gstRate: item.gstRate,
+          gstAmount: item.gstAmount,
+          lineTotal: item.lineTotal,
+        })),
+      );
+      if (allItems.length) {
+        await tx.syncedInvoiceItem.createMany({ data: allItems });
       }
     }
 
@@ -201,6 +213,16 @@ async function syncData(
       },
       syncedAt,
     };
+  }, {
+    // Default interactive-transaction timeout is 5s — every record here is a
+    // separate sequential await (an invoice alone is 3 queries: upsert,
+    // deleteMany, createMany), so any shop with a real amount of history
+    // blows past that and Prisma kills the transaction mid-sync with
+    // "Transaction not found" (surfaces to the client as a bare HTTP 500).
+    // 60s — generous on purpose: this runs as a background sync (the app
+    // already shows "Syncing…" rather than blocking), and per-query latency
+    // varies a lot with where the request originates relative to the DB.
+    timeout: 60000,
   });
 }
 
