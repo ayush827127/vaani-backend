@@ -1,0 +1,322 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AdminRole {
+  SUPERADMIN
+  SUPPORT
+}
+
+enum ShopStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+enum ShopUserRole {
+  OWNER
+  MANAGER
+  CASHIER
+}
+
+model AdminUser {
+  id        String    @id @default(uuid())
+  name      String
+  email     String    @unique
+  password  String
+  role      AdminRole @default(SUPERADMIN)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Shop {
+  id             String     @id @default(uuid())
+  name           String
+  ownerName      String
+  phone          String     @unique
+  email          String?
+  address        String?
+  gstNumber      String?
+  currency       String     @default("INR")
+  gstEnabled     Boolean    @default(true)
+  defaultGstRate Float      @default(5.0)
+  upiId          String?
+  categories     String[]   @default([])
+  logoUrl        String?
+  status         ShopStatus @default(TRIAL)
+  lastDataSyncAt DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  subscriptions   Subscription[]
+  shopUsers       ShopUser[]
+  moduleOverrides ShopModuleOverride[]
+
+  syncedProducts              SyncedProduct[]
+  syncedCustomers             SyncedCustomer[]
+  syncedInvoices              SyncedInvoice[]
+  syncedInventoryTransactions SyncedInventoryTransaction[]
+  syncedPaymentTransactions   SyncedPaymentTransaction[]
+}
+
+model Module {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+
+  planModules   PlanModule[]
+  shopOverrides ShopModuleOverride[]
+  userAccess    ShopUserModuleAccess[]
+}
+
+model Plan {
+  id           String       @id @default(uuid())
+  name         String       @unique
+  price        Decimal      @db.Decimal(10, 2)
+  billingCycle BillingCycle @default(MONTHLY)
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  modules       PlanModule[]
+  subscriptions Subscription[]
+}
+
+model PlanModule {
+  id       String @id @default(uuid())
+  planId   String
+  moduleId String
+
+  plan   Plan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+  module Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, moduleId])
+}
+
+model ShopModuleOverride {
+  id       String  @id @default(uuid())
+  shopId   String
+  moduleId String
+  enabled  Boolean
+
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  module Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, moduleId])
+}
+
+model Subscription {
+  id        String             @id @default(uuid())
+  shopId    String
+  planId    String
+  status    SubscriptionStatus @default(TRIAL)
+  startDate DateTime           @default(now())
+  endDate   DateTime?
+  autoRenew Boolean            @default(false)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  plan Plan @relation(fields: [planId], references: [id])
+}
+
+model ShopUser {
+  id        String       @id @default(uuid())
+  shopId    String
+  name      String
+  phone     String
+  role      ShopUserRole @default(CASHIER)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  shop         Shop                   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  moduleAccess ShopUserModuleAccess[]
+
+  @@unique([shopId, phone])
+}
+
+model ShopUserModuleAccess {
+  id         String  @id @default(uuid())
+  shopUserId String
+  moduleId   String
+  canView    Boolean @default(true)
+  canEdit    Boolean @default(false)
+
+  shopUser ShopUser @relation(fields: [shopUserId], references: [id], onDelete: Cascade)
+  module   Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([shopUserId, moduleId])
+}
+
+// ── Two-way business-data mirror. Each top-level model is upserted on
+// (shopId, localId), where localId is the record's local SQLite autoincrement
+// id for phone-originated rows, or a negative id (see negativeLocalId.js) for
+// admin-panel-originated rows — chosen so the two id spaces never collide,
+// since admin-created records get pulled down onto the phone too.
+// Push (phone → cloud, shop-sync's POST /sync) always wins on whatever
+// fields it sends, EXCEPT deletedAt: push must never set it, so a phone sync
+// can never accidentally resurrect an admin-deleted record (see shop-sync's
+// field builders). Pull (cloud → phone, GET /sync/pull) treats deletedAt as
+// an unconditional tombstone and every other field as most-recent-wins by
+// comparing localUpdatedAt. ─────────────────────────────────────────────────
+
+model SyncedProduct {
+  id             String   @id @default(uuid())
+  shopId         String
+  localId        Int
+  name           String
+  sku            String?
+  barcode        String?
+  category       String?
+  costPrice      Float
+  sellingPrice   Float
+  gstRate        Float
+  stockQuantity  Int
+  reorderLevel   Int
+  imagePath      String?
+  imageUrl       String?
+  aliases        String[] @default([])
+  isActive       Boolean
+  // Independent from isActive (an existing, separate status toggle already
+  // exposed in the admin panel) — set only by an admin-panel delete, and
+  // read only by the phone's pull-sync to know a product was removed.
+  deletedAt      DateTime?
+  localCreatedAt DateTime
+  localUpdatedAt DateTime
+  syncedAt       DateTime @default(now())
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, localId])
+}
+
+model SyncedCustomer {
+  id               String    @id @default(uuid())
+  shopId           String
+  localId          Int
+  name             String
+  phone            String?
+  email            String?
+  address          String?
+  totalPurchases   Float
+  totalBills       Int
+  totalOutstanding Float
+  advanceBalance   Float
+  lastVisit        DateTime?
+  deletedAt        DateTime?
+  localCreatedAt   DateTime
+  localUpdatedAt   DateTime
+  syncedAt         DateTime  @default(now())
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, localId])
+}
+
+model SyncedInvoice {
+  id              String   @id @default(uuid())
+  shopId          String
+  localId         Int
+  invoiceNumber   String
+  localCustomerId Int?
+  customerName    String
+  subtotal        Float
+  discountType    String
+  discountValue   Float
+  discountAmount  Float
+  gstAmount       Float
+  grandTotal      Float
+  receivedAmount  Float
+  pendingAmount   Float
+  paymentMode     String
+  status          String
+  notes           String?
+  deletedAt       DateTime?
+  localCreatedAt  DateTime
+  localUpdatedAt  DateTime
+  syncedAt        DateTime @default(now())
+
+  shop  Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  items SyncedInvoiceItem[]
+
+  @@unique([shopId, localId])
+}
+
+model SyncedInvoiceItem {
+  id             String @id @default(uuid())
+  invoiceId      String
+  localId        Int
+  localProductId Int
+  productName    String
+  quantity       Int
+  sellingPrice   Float
+  gstRate        Float
+  gstAmount      Float
+  lineTotal      Float
+
+  invoice SyncedInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, localId])
+}
+
+model SyncedInventoryTransaction {
+  id             String   @id @default(uuid())
+  shopId         String
+  localId        Int
+  localProductId Int
+  localInvoiceId Int?
+  type           String
+  quantityChange Int
+  stockBefore    Int
+  stockAfter     Int
+  notes          String?
+  localCreatedAt DateTime
+  syncedAt       DateTime @default(now())
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, localId])
+}
+
+model SyncedPaymentTransaction {
+  id              String    @id @default(uuid())
+  shopId          String
+  localId         Int
+  localCustomerId Int
+  localInvoiceId  Int?
+  type            String
+  amount          Float
+  paymentMode     String
+  notes           String?
+  deletedAt       DateTime?
+  localCreatedAt  DateTime
+  // Nullable + backfilled (existing rows never had an edit timestamp before
+  // two-way sync) — needed so admin edits/deletes to a payment are visible
+  // to the phone's "changed since" pull query, same as every other entity.
+  localUpdatedAt  DateTime?
+  syncedAt        DateTime  @default(now())
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, localId])
+}

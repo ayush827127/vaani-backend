@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: vaani-admin-backend
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install && npx prisma generate && npx prisma migrate deploy
+    startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: SHOP_JWT_EXPIRES_IN
+        value: 180d
+      - key: ADMIN_SEED_NAME
+        sync: false
+      - key: ADMIN_SEED_EMAIL
+        sync: false
+      - key: ADMIN_SEED_PASSWORD
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: NINZA_SMS_API_KEY
+        sync: false
+      - key: NINZA_SMS_SENDER_ID
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
