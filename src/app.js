@@ -33,8 +33,9 @@ const app = express();
 
 app.use(helmet());
 // Only matters for browser clients (admin panel / future shop web portal) —
-// native app HTTP clients aren't subject to CORS at all.
-app.use(cors({ origin: env.allowedOrigins }));
+// native app HTTP clients aren't subject to CORS at all. Open to all origins:
+// auth is a Bearer token (not cookies), so there's no credentialed-CORS risk.
+app.use(cors({ origin: '*' }));
 // Full data-sync batches (invoices + items, products, customers) can exceed
 // the 100kb default body limit for shops with a lot of history.
 app.use(express.json({ limit: '15mb' }));

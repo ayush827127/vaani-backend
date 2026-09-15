@@ -32,11 +32,6 @@ module.exports = {
     apiKey: process.env.NINZA_SMS_API_KEY,
     senderId: process.env.NINZA_SMS_SENDER_ID,
   },
-  // Comma-separated list of browser origins allowed to call the API (CORS).
-  allowedOrigins: (process.env.ALLOWED_ORIGINS || 'http://localhost:5173')
-    .split(',')
-    .map((o) => o.trim())
-    .filter(Boolean),
   // Admin-panel image uploads/deletes (product photos, shop logo) go through
   // the backend using the API key/secret — unlike the phone app, which
   // uploads straight to Cloudinary via an unsigned preset and never touches
