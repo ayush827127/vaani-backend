@@ -52,6 +52,10 @@ function invoiceFields(inv) {
     paymentMode: inv.paymentMode,
     status: inv.status,
     notes: inv.notes ?? null,
+    // Counted by shop-voice.service.js's Basic-plan quota check — must
+    // reflect exactly what the phone marked at checkout, never inferred
+    // here.
+    isVoiceCreated: inv.isVoiceCreated ?? false,
     localCreatedAt: new Date(inv.createdAt),
     localUpdatedAt: new Date(inv.updatedAt),
   };
@@ -305,6 +309,7 @@ function invoiceOut(inv) {
     paymentMode: inv.paymentMode,
     status: inv.status,
     notes: inv.notes,
+    isVoiceCreated: inv.isVoiceCreated,
     deletedAt: inv.deletedAt,
     createdAt: inv.localCreatedAt,
     updatedAt: inv.localUpdatedAt,

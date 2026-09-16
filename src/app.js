@@ -25,6 +25,8 @@ const shopProductsRoutes = require('./modules/shop-products/shop-products.routes
 const shopCustomersRoutes = require('./modules/shop-customers/shop-customers.routes');
 const shopInvoicesRoutes = require('./modules/shop-invoices/shop-invoices.routes');
 const shopPaymentsRoutes = require('./modules/shop-payments/shop-payments.routes');
+const shopSubscriptionRoutes = require('./modules/shop-subscription/shop-subscription.routes');
+const adminPaymentClaimsRoutes = require('./modules/admin-payment-claims/admin-payment-claims.routes');
 
 const notFoundMiddleware = require('./middleware/notFound.middleware');
 const errorMiddleware = require('./middleware/error.middleware');
@@ -54,12 +56,14 @@ app.use('/api/admin/shops/:shopId/payments', shopPaymentsRoutes);
 app.use('/api/admin/plans', plansRoutes);
 app.use('/api/admin/modules', modulesRoutes);
 app.use('/api/admin', subscriptionsRoutes);
+app.use('/api/admin/payment-claims', adminPaymentClaimsRoutes);
 
 app.use('/api/shop/auth', shopAuthLimiter, shopAuthRoutes);
 app.use('/api/shop/auth', shopAuthLimiter, shopOtpRoutes);
 app.use('/api/shop', shopStatusRoutes);
 app.use('/api/shop', shopSyncRoutes);
 app.use('/api/shop', shopVoiceRoutes);
+app.use('/api/shop', shopSubscriptionRoutes);
 
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);

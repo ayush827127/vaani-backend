@@ -65,6 +65,7 @@ const invoiceSchema = z.object({
   paymentMode: z.string(),
   status: z.string(),
   notes: z.string().nullable().optional(),
+  isVoiceCreated: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   items: z.array(invoiceItemSchema).optional(),

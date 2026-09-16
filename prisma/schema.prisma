@@ -31,6 +31,12 @@ enum SubscriptionStatus {
   CANCELLED
 }
 
+enum PaymentClaimStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+}
+
 enum ShopUserRole {
   OWNER
   MANAGER
@@ -69,6 +75,7 @@ model Shop {
   subscriptions   Subscription[]
   shopUsers       ShopUser[]
   moduleOverrides ShopModuleOverride[]
+  paymentClaims   PaymentClaim[]
 
   syncedProducts              SyncedProduct[]
   syncedCustomers             SyncedCustomer[]
@@ -100,6 +107,7 @@ model Plan {
 
   modules       PlanModule[]
   subscriptions Subscription[]
+  paymentClaims PaymentClaim[]
 }
 
 model PlanModule {
@@ -135,6 +143,34 @@ model Subscription {
   autoRenew Boolean            @default(false)
   createdAt DateTime           @default(now())
   updatedAt DateTime           @updatedAt
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  plan Plan @relation(fields: [planId], references: [id])
+}
+
+// A shopkeeper's claim to have paid for a plan via UPI. UPI has no server-
+// verifiable webhook for a plain VPA (no payment gateway/PSP is in play
+// here) — so the client can only ever *claim* a payment happened; this
+// model exists specifically so a claim never activates a subscription by
+// itself. An admin reviews the claim (matching it against the actual UPI
+// credit in their own bank/UPI app) and confirms or rejects it — only that
+// action, on the backend, ever changes what plan is active. `reference` is
+// the idempotency key the phone generates client-side and embeds in the UPI
+// transaction note, so a retried/duplicate submission for the same intended
+// payment reuses the same claim instead of creating a second one.
+model PaymentClaim {
+  id          String             @id @default(uuid())
+  shopId      String
+  planId      String
+  amount      Decimal            @db.Decimal(10, 2)
+  reference   String             @unique
+  status      PaymentClaimStatus @default(PENDING)
+  note        String?
+  createdAt   DateTime           @default(now())
+  confirmedAt DateTime?
+  // Free text (admin email) rather than a relation — keeps this model
+  // simple and avoids a hard FK to AdminUser for what's just an audit trail.
+  reviewedBy  String?
 
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
   plan Plan @relation(fields: [planId], references: [id])
@@ -181,7 +217,7 @@ model ShopUserModuleAccess {
 // comparing localUpdatedAt. ─────────────────────────────────────────────────
 
 model SyncedProduct {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   shopId         String
   localId        Int
   name           String
@@ -195,7 +231,7 @@ model SyncedProduct {
   reorderLevel   Int
   imagePath      String?
   imageUrl       String?
-  aliases        String[] @default([])
+  aliases        String[]  @default([])
   isActive       Boolean
   // Independent from isActive (an existing, separate status toggle already
   // exposed in the admin panel) — set only by an admin-panel delete, and
@@ -203,7 +239,7 @@ model SyncedProduct {
   deletedAt      DateTime?
   localCreatedAt DateTime
   localUpdatedAt DateTime
-  syncedAt       DateTime @default(now())
+  syncedAt       DateTime  @default(now())
 
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
@@ -234,7 +270,7 @@ model SyncedCustomer {
 }
 
 model SyncedInvoice {
-  id              String   @id @default(uuid())
+  id              String    @id @default(uuid())
   shopId          String
   localId         Int
   invoiceNumber   String
@@ -251,10 +287,16 @@ model SyncedInvoice {
   paymentMode     String
   status          String
   notes           String?
+  // Whether this invoice was created via voice billing — the Basic plan's
+  // 50-voice-invoice cap is enforced by counting these (see
+  // shop-voice.service.js), not by a separately-incremented counter, so the
+  // number is always exactly "how many voice invoices this shop actually
+  // has" rather than something a client could desync from reality.
+  isVoiceCreated  Boolean   @default(false)
   deletedAt       DateTime?
   localCreatedAt  DateTime
   localUpdatedAt  DateTime
-  syncedAt        DateTime @default(now())
+  syncedAt        DateTime  @default(now())
 
   shop  Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
   items SyncedInvoiceItem[]
