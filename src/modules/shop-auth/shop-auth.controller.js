@@ -12,4 +12,9 @@ const login = asyncHandler(async (req, res) => {
   return ok(res, result);
 });
 
-module.exports = { register, login };
+const changePhone = asyncHandler(async (req, res) => {
+  const result = await service.changePhone(req.shop.id, req.body.phone);
+  return ok(res, result);
+});
+
+module.exports = { register, login, changePhone };

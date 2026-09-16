@@ -87,6 +87,37 @@ function paymentTransactionFields(p) {
   };
 }
 
+// Batches upserts for entities keyed on (shopId, localId): one existence
+// check across the whole batch, then a single createMany for everything new
+// and per-row updates only for rows that already exist. An upsert() does its
+// own existence check internally, so N of them is up to 2N round-trips; this
+// collapses the check into one query and, for a first sync or any batch
+// that's mostly-new (the exact shape that blew the invoice-items timeout),
+// most of the work becomes a single createMany instead of N upserts.
+async function upsertBatch(tx, model, shopId, records, buildFields) {
+  if (!records.length) return;
+  const localIds = records.map((r) => r.localId);
+  const existing = await tx[model].findMany({
+    where: { shopId, localId: { in: localIds } },
+    select: { localId: true },
+  });
+  const existingIds = new Set(existing.map((e) => e.localId));
+
+  const toCreate = records.filter((r) => !existingIds.has(r.localId));
+  if (toCreate.length) {
+    await tx[model].createMany({
+      data: toCreate.map((r) => ({ shopId, localId: r.localId, ...buildFields(r) })),
+    });
+  }
+  for (const r of records) {
+    if (!existingIds.has(r.localId)) continue;
+    await tx[model].update({
+      where: { shopId_localId: { shopId, localId: r.localId } },
+      data: buildFields(r),
+    });
+  }
+}
+
 async function syncData(
   shopId,
   {
@@ -99,38 +130,29 @@ async function syncData(
   }
 ) {
   return prisma.$transaction(async (tx) => {
-    for (const p of products) {
-      await tx.syncedProduct.upsert({
-        where: { shopId_localId: { shopId, localId: p.localId } },
-        update: productFields(p),
-        create: { shopId, localId: p.localId, ...productFields(p) },
-      });
-    }
+    await upsertBatch(tx, 'syncedProduct', shopId, products, productFields);
+    await upsertBatch(tx, 'syncedCustomer', shopId, customers, customerFields);
 
-    for (const c of customers) {
-      await tx.syncedCustomer.upsert({
-        where: { shopId_localId: { shopId, localId: c.localId } },
-        update: customerFields(c),
-        create: { shopId, localId: c.localId, ...customerFields(c) },
-      });
-    }
-
-    // Items are immutable once created — simplest correct approach is to
-    // replace them wholesale rather than diff/upsert each one. Batched across
-    // *all* invoices (one deleteMany + one createMany) rather than 2 extra
-    // queries per invoice inside the loop above — with real invoice history
-    // that was enough sequential round-trips inside one interactive
-    // transaction to blow past Prisma's timeout and get the transaction
-    // killed mid-sync (surfaced to the client as a bare HTTP 500).
-    const syncedInvoices = [];
-    for (const inv of invoices) {
-      const synced = await tx.syncedInvoice.upsert({
-        where: { shopId_localId: { shopId, localId: inv.localId } },
-        update: invoiceFields(inv),
-        create: { shopId, localId: inv.localId, ...invoiceFields(inv) },
-      });
-      syncedInvoices.push({ inv, invoiceId: synced.id });
-    }
+    // Invoices themselves are batched the same way as products/customers
+    // above. Items are immutable once created — simplest correct approach is
+    // to replace them wholesale rather than diff/upsert each one — batched
+    // across *all* invoices (one deleteMany + one createMany) rather than 2
+    // extra queries per invoice: with real invoice history that was enough
+    // sequential round-trips inside one interactive transaction to blow past
+    // Prisma's timeout and get the transaction killed mid-sync (surfaced to
+    // the client as a bare HTTP 500).
+    await upsertBatch(tx, 'syncedInvoice', shopId, invoices, invoiceFields);
+    const syncedInvoiceRows = invoices.length
+      ? await tx.syncedInvoice.findMany({
+          where: { shopId, localId: { in: invoices.map((inv) => inv.localId) } },
+          select: { id: true, localId: true },
+        })
+      : [];
+    const invoiceIdByLocalId = new Map(syncedInvoiceRows.map((row) => [row.localId, row.id]));
+    const syncedInvoices = invoices.map((inv) => ({
+      inv,
+      invoiceId: invoiceIdByLocalId.get(inv.localId),
+    }));
 
     if (syncedInvoices.length) {
       await tx.syncedInvoiceItem.deleteMany({
@@ -154,21 +176,14 @@ async function syncData(
       }
     }
 
-    for (const t of inventoryTransactions) {
-      await tx.syncedInventoryTransaction.upsert({
-        where: { shopId_localId: { shopId, localId: t.localId } },
-        update: inventoryTransactionFields(t),
-        create: { shopId, localId: t.localId, ...inventoryTransactionFields(t) },
-      });
-    }
-
-    for (const p of paymentTransactions) {
-      await tx.syncedPaymentTransaction.upsert({
-        where: { shopId_localId: { shopId, localId: p.localId } },
-        update: paymentTransactionFields(p),
-        create: { shopId, localId: p.localId, ...paymentTransactionFields(p) },
-      });
-    }
+    await upsertBatch(
+      tx,
+      'syncedInventoryTransaction',
+      shopId,
+      inventoryTransactions,
+      inventoryTransactionFields
+    );
+    await upsertBatch(tx, 'syncedPaymentTransaction', shopId, paymentTransactions, paymentTransactionFields);
 
     const syncedAt = new Date();
 

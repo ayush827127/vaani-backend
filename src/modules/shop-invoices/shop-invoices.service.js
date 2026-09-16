@@ -1,6 +1,6 @@
 const prisma = require('../../config/prisma');
 const AppError = require('../../utils/AppError');
-const { nextNegativeLocalId } = require('../../utils/negativeLocalId');
+const { createWithNegativeLocalId } = require('../../utils/negativeLocalId');
 
 async function list(shopId, { search, page = 1, limit = 20 }) {
   const where = {
@@ -65,9 +65,8 @@ async function create(shopId, data) {
   const pendingAmount = grandTotal - receivedAmount;
   const now = new Date();
 
-  return prisma.$transaction(async (tx) => {
-    const localId = await nextNegativeLocalId(tx, 'syncedInvoice', shopId);
-    const invoice = await tx.syncedInvoice.create({
+  return createWithNegativeLocalId(prisma, 'syncedInvoice', shopId, (tx, localId) =>
+    tx.syncedInvoice.create({
       data: {
         shopId,
         localId,
@@ -101,22 +100,43 @@ async function create(shopId, data) {
         },
       },
       include: { items: true },
-    });
-    return invoice;
-  });
+    })
+  );
 }
 
 async function update(shopId, id, data) {
   const existing = await getById(shopId, id);
 
   const hasItems = Array.isArray(data.items);
-  const totals = hasItems
+  const discountChanged = data.discountType !== undefined || data.discountValue !== undefined;
+  // Totals must be recomputed whenever items OR the discount changes — not
+  // just items. A discount-only PATCH (no items) used to fall through this
+  // gate entirely and silently no-op (200 OK, nothing actually changed).
+  // When items aren't provided, fall back to the invoice's existing items so
+  // a discount-only edit still has something to recompute totals from.
+  const totals = hasItems || discountChanged
     ? computeTotals(
-        data.items,
+        hasItems
+          ? data.items
+          : existing.items.map((item) => ({
+              productId: item.localProductId,
+              productName: item.productName,
+              quantity: item.quantity,
+              sellingPrice: item.sellingPrice,
+              gstRate: item.gstRate,
+            })),
         data.discountType ?? existing.discountType,
         data.discountValue ?? existing.discountValue
       )
     : null;
+
+  // pendingAmount depends on grandTotal (moves when totals is recomputed
+  // above) and on receivedAmount (moves when that's patched directly) —
+  // either changing alone used to leave pendingAmount stale relative to the
+  // other. Recomputed from both on every update, not just when items change.
+  const grandTotal = totals ? totals.grandTotal : existing.grandTotal;
+  const receivedAmount = data.receivedAmount ?? existing.receivedAmount;
+  const pendingAmount = grandTotal - receivedAmount;
 
   return prisma.$transaction(async (tx) => {
     const invoice = await tx.syncedInvoice.update({
@@ -136,10 +156,9 @@ async function update(shopId, id, data) {
               gstAmount: totals.gstAmount,
               discountAmount: totals.discountAmount,
               grandTotal: totals.grandTotal,
-              pendingAmount:
-                totals.grandTotal - (data.receivedAmount ?? existing.receivedAmount),
             }
           : {}),
+        pendingAmount,
         localUpdatedAt: new Date(),
       },
     });

@@ -1,6 +1,6 @@
 const prisma = require('../../config/prisma');
 const AppError = require('../../utils/AppError');
-const { nextNegativeLocalId } = require('../../utils/negativeLocalId');
+const { createWithNegativeLocalId } = require('../../utils/negativeLocalId');
 
 async function list(shopId, { search, page = 1, limit = 20 }) {
   const where = {
@@ -30,25 +30,26 @@ async function getById(shopId, id) {
 }
 
 async function create(shopId, data) {
-  const localId = await nextNegativeLocalId(prisma, 'syncedCustomer', shopId);
   const now = new Date();
-  return prisma.syncedCustomer.create({
-    data: {
-      shopId,
-      localId,
-      name: data.name,
-      phone: data.phone ?? null,
-      email: data.email ?? null,
-      address: data.address ?? null,
-      totalPurchases: data.totalPurchases ?? 0,
-      totalBills: data.totalBills ?? 0,
-      totalOutstanding: data.totalOutstanding ?? 0,
-      advanceBalance: data.advanceBalance ?? 0,
-      lastVisit: data.lastVisit ? new Date(data.lastVisit) : null,
-      localCreatedAt: now,
-      localUpdatedAt: now,
-    },
-  });
+  return createWithNegativeLocalId(prisma, 'syncedCustomer', shopId, (tx, localId) =>
+    tx.syncedCustomer.create({
+      data: {
+        shopId,
+        localId,
+        name: data.name,
+        phone: data.phone ?? null,
+        email: data.email ?? null,
+        address: data.address ?? null,
+        totalPurchases: data.totalPurchases ?? 0,
+        totalBills: data.totalBills ?? 0,
+        totalOutstanding: data.totalOutstanding ?? 0,
+        advanceBalance: data.advanceBalance ?? 0,
+        lastVisit: data.lastVisit ? new Date(data.lastVisit) : null,
+        localCreatedAt: now,
+        localUpdatedAt: now,
+      },
+    })
+  );
 }
 
 async function update(shopId, id, data) {

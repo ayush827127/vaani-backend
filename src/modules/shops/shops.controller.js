@@ -1,15 +1,12 @@
 const asyncHandler = require('../../utils/asyncHandler');
 const { ok } = require('../../utils/apiResponse');
 const AppError = require('../../utils/AppError');
+const { parsePagination } = require('../../utils/pagination');
 const service = require('./shops.service');
 
 const list = asyncHandler(async (req, res) => {
-  const { page, limit, status } = req.query;
-  const result = await service.list({
-    page: page ? Number(page) : undefined,
-    limit: limit ? Number(limit) : undefined,
-    status,
-  });
+  const { status } = req.query;
+  const result = await service.list({ ...parsePagination(req.query), status });
   return ok(res, result);
 });
 

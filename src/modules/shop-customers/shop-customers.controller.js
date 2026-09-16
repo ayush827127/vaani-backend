@@ -1,14 +1,11 @@
 const asyncHandler = require('../../utils/asyncHandler');
 const { ok } = require('../../utils/apiResponse');
+const { parsePagination } = require('../../utils/pagination');
 const service = require('./shop-customers.service');
 
 const list = asyncHandler(async (req, res) => {
-  const { search, page, limit } = req.query;
-  const result = await service.list(req.params.shopId, {
-    search,
-    page: page ? Number(page) : undefined,
-    limit: limit ? Number(limit) : undefined,
-  });
+  const { search } = req.query;
+  const result = await service.list(req.params.shopId, { search, ...parsePagination(req.query) });
   return ok(res, result);
 });
 

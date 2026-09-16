@@ -1,6 +1,6 @@
 const prisma = require('../../config/prisma');
 const AppError = require('../../utils/AppError');
-const { nextNegativeLocalId } = require('../../utils/negativeLocalId');
+const { createWithNegativeLocalId } = require('../../utils/negativeLocalId');
 const { replaceImage, deleteImage } = require('../../utils/cloudinaryImage');
 
 async function list(shopId, { search, page = 1, limit = 20 }) {
@@ -32,27 +32,28 @@ async function getById(shopId, id) {
 }
 
 async function create(shopId, data) {
-  const localId = await nextNegativeLocalId(prisma, 'syncedProduct', shopId);
   const now = new Date();
-  return prisma.syncedProduct.create({
-    data: {
-      shopId,
-      localId,
-      name: data.name,
-      sku: data.sku ?? null,
-      barcode: data.barcode ?? null,
-      category: data.category ?? null,
-      costPrice: data.costPrice,
-      sellingPrice: data.sellingPrice,
-      gstRate: data.gstRate,
-      stockQuantity: data.stockQuantity,
-      reorderLevel: data.reorderLevel,
-      imagePath: data.imagePath ?? null,
-      isActive: data.isActive ?? true,
-      localCreatedAt: now,
-      localUpdatedAt: now,
-    },
-  });
+  return createWithNegativeLocalId(prisma, 'syncedProduct', shopId, (tx, localId) =>
+    tx.syncedProduct.create({
+      data: {
+        shopId,
+        localId,
+        name: data.name,
+        sku: data.sku ?? null,
+        barcode: data.barcode ?? null,
+        category: data.category ?? null,
+        costPrice: data.costPrice,
+        sellingPrice: data.sellingPrice,
+        gstRate: data.gstRate,
+        stockQuantity: data.stockQuantity,
+        reorderLevel: data.reorderLevel,
+        imagePath: data.imagePath ?? null,
+        isActive: data.isActive ?? true,
+        localCreatedAt: now,
+        localUpdatedAt: now,
+      },
+    })
+  );
 }
 
 async function update(shopId, id, data) {
