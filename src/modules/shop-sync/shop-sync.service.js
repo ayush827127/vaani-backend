@@ -11,8 +11,18 @@ function productFields(p) {
     gstRate: p.gstRate,
     stockQuantity: p.stockQuantity,
     reorderLevel: p.reorderLevel,
-    imagePath: p.imagePath ?? null,
-    imageUrl: p.imageUrl ?? null,
+    // Omitted (not set to null) when the phone doesn't have a value —
+    // upsertBatch below uses this same field set for both create and
+    // update. On create, Prisma's nullable-column default already lands on
+    // null either way; on update, unconditionally sending `?? null` here
+    // meant any push where the phone's local copy hadn't caught up yet
+    // (right after a fresh login, before the next pull restores it) wiped
+    // an already-uploaded image on the existing row. This was a real,
+    // confirmed data-loss bug — a shop's product photo (and the shop logo,
+    // fixed the same way) could vanish from the backend after logging out
+    // and back in.
+    ...(p.imagePath ? { imagePath: p.imagePath } : {}),
+    ...(p.imageUrl ? { imageUrl: p.imageUrl } : {}),
     aliases: p.aliases ?? [],
     isActive: p.isActive,
     localCreatedAt: new Date(p.createdAt),
