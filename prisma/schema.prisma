@@ -362,3 +362,21 @@ model SyncedPaymentTransaction {
 
   @@unique([shopId, localId])
 }
+
+// Server-side error capture — errorMiddleware writes here for every 5xx so
+// a hard-to-reproduce production failure (works fine when reproduced from a
+// dev machine, fails on a real device) can be inspected directly via the
+// database instead of needing live access to Render's own log stream.
+// Deliberately no relation to Shop: the shop/request context might itself
+// be the thing that's broken, and this must never fail to write because of it.
+model ErrorLog {
+  id         String   @id @default(uuid())
+  method     String
+  path       String
+  statusCode Int
+  message    String
+  stack      String?
+  shopId     String?
+  bodyPreview String?
+  createdAt  DateTime @default(now())
+}
