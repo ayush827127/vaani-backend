@@ -39,6 +39,11 @@ const setModuleOverride = asyncHandler(async (req, res) => {
   return ok(res, override);
 });
 
+const removeModuleOverride = asyncHandler(async (req, res) => {
+  await service.removeModuleOverride(req.params.id, req.params.moduleId);
+  return ok(res, { removed: true });
+});
+
 const uploadLogo = asyncHandler(async (req, res) => {
   if (!req.file) {
     throw new AppError('No image file provided', 400);
@@ -59,6 +64,7 @@ module.exports = {
   update,
   setStatus,
   setModuleOverride,
+  removeModuleOverride,
   uploadLogo,
   removeLogo,
 };

@@ -71,6 +71,15 @@ async function setModuleOverride(shopId, moduleId, enabled) {
   });
 }
 
+// Removes the override entirely so the shop goes back to "whatever its plan
+// grants" — distinct from setModuleOverride(shopId, moduleId, false), which
+// explicitly revokes the module regardless of plan. deleteMany rather than
+// delete so calling this when no override exists is a no-op, not a 404.
+async function removeModuleOverride(shopId, moduleId) {
+  await getById(shopId);
+  await prisma.shopModuleOverride.deleteMany({ where: { shopId, moduleId } });
+}
+
 async function setLogo(id, buffer) {
   const shop = await getById(id);
   const logoUrl = await replaceImage({

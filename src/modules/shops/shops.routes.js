@@ -16,7 +16,18 @@ const createSchema = z.object({
   status: statusEnum.optional(),
 });
 
-const updateSchema = createSchema.partial();
+// Not just createSchema.partial() — email/address need to accept `null`
+// too so an admin can actually clear one that's already set, not just leave
+// it as-is by omitting the key (partial() alone only makes a key optional,
+// it doesn't make its value nullable).
+const updateSchema = z.object({
+  name: z.string().min(1).optional(),
+  ownerName: z.string().min(1).optional(),
+  phone: z.string().min(1).optional(),
+  email: z.string().email().nullable().optional(),
+  address: z.string().nullable().optional(),
+  status: statusEnum.optional(),
+});
 
 const statusSchema = z.object({ status: statusEnum });
 
@@ -36,6 +47,7 @@ router.patch(
   validate(moduleOverrideSchema),
   controller.setModuleOverride
 );
+router.delete('/:id/modules/:moduleId', controller.removeModuleOverride);
 router.post('/:id/logo', imageUpload, controller.uploadLogo);
 router.delete('/:id/logo', controller.removeLogo);
 

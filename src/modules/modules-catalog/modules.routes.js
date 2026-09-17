@@ -10,7 +10,14 @@ const createSchema = z.object({
   description: z.string().optional(),
 });
 
-const updateSchema = createSchema.partial();
+// Not createSchema.partial() — key is deliberately excluded (it's the
+// stable identifier plans/overrides/module-access reference by; changing it
+// after creation would silently detach all of those) and description needs
+// to accept `null` to actually be clearable, not just omittable.
+const updateSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().nullable().optional(),
+});
 
 const router = Router();
 
