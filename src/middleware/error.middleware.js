@@ -8,19 +8,31 @@ const prisma = require('../config/prisma');
 // Fire-and-forget and defensively wrapped: logging a failure must never be
 // the thing that makes the original request handling fail harder.
 function logServerError(err, req, status) {
-  prisma.errorLog
-    .create({
-      data: {
-        method: req.method,
-        path: req.originalUrl,
-        statusCode: status,
-        message: String(err.message || err).slice(0, 2000),
-        stack: err.stack ? String(err.stack).slice(0, 4000) : null,
-        shopId: req.shop?.id || null,
-        bodyPreview: req.body ? JSON.stringify(req.body).slice(0, 1000) : null,
-      },
-    })
-    .catch((logErr) => console.error('[errorLog] failed to persist error log:', logErr.message));
+  // Wrapped in try/catch, not just a Promise .catch() — if prisma.errorLog
+  // itself isn't a valid client property (e.g. a deployed Prisma Client
+  // that's out of sync with the schema), `.create` throws SYNCHRONOUSLY,
+  // before any Promise exists to attach a .catch() to. That escaped this
+  // function entirely and crashed errorMiddleware itself, which is what
+  // caused every 500 on the live deployment — regardless of its original
+  // cause — to fall through to Express's own generic fallback page instead
+  // of ever reaching this file's actual JSON response below.
+  try {
+    prisma.errorLog
+      .create({
+        data: {
+          method: req.method,
+          path: req.originalUrl,
+          statusCode: status,
+          message: String(err.message || err).slice(0, 2000),
+          stack: err.stack ? String(err.stack).slice(0, 4000) : null,
+          shopId: req.shop?.id || null,
+          bodyPreview: req.body ? JSON.stringify(req.body).slice(0, 1000) : null,
+        },
+      })
+      .catch((logErr) => console.error('[errorLog] failed to persist error log:', logErr.message));
+  } catch (syncErr) {
+    console.error('[errorLog] threw synchronously:', syncErr.message);
+  }
 }
 
 // eslint-disable-next-line no-unused-vars
