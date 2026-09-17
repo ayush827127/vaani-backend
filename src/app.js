@@ -72,6 +72,15 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// TEMPORARY diagnostic — deliberately throws, unrelated to any Prisma model,
+// to isolate whether errorMiddleware itself (specifically the ErrorLog
+// write it now does) is what's crashing into Express's built-in fallback
+// handler, or whether that's isolated to specific route handlers. Remove
+// once /payment-claims and /subscription/voice-usage are root-caused.
+app.get('/_diag/throw', () => {
+  throw new Error('deliberate diagnostic error, not a real bug');
+});
+
 app.use('/api/admin/auth', adminAuthLimiter, adminAuthRoutes);
 app.use('/api/admin/shops', shopsRoutes);
 app.use('/api/admin/shops/:shopId/users', shopUsersRoutes);
