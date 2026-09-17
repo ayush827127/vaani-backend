@@ -2,8 +2,20 @@ const prisma = require('../../config/prisma');
 const AppError = require('../../utils/AppError');
 const { replaceImage, deleteImage } = require('../../utils/cloudinaryImage');
 
-async function list({ page = 1, limit = 20, status }) {
-  const where = status ? { status } : {};
+async function list({ page = 1, limit = 20, status, search }) {
+  const where = {
+    ...(status ? { status } : {}),
+    ...(search
+      ? {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' } },
+            { ownerName: { contains: search, mode: 'insensitive' } },
+            { phone: { contains: search, mode: 'insensitive' } },
+            { email: { contains: search, mode: 'insensitive' } },
+          ],
+        }
+      : {}),
+  };
   const skip = (page - 1) * limit;
 
   const [items, total] = await Promise.all([

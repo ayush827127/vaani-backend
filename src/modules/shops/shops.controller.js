@@ -5,8 +5,8 @@ const { parsePagination } = require('../../utils/pagination');
 const service = require('./shops.service');
 
 const list = asyncHandler(async (req, res) => {
-  const { status } = req.query;
-  const result = await service.list({ ...parsePagination(req.query), status });
+  const { status, search } = req.query;
+  const result = await service.list({ ...parsePagination(req.query), status, search });
   return ok(res, result);
 });
 

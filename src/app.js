@@ -28,6 +28,7 @@ const shopInvoicesRoutes = require('./modules/shop-invoices/shop-invoices.routes
 const shopPaymentsRoutes = require('./modules/shop-payments/shop-payments.routes');
 const shopSubscriptionRoutes = require('./modules/shop-subscription/shop-subscription.routes');
 const adminPaymentClaimsRoutes = require('./modules/admin-payment-claims/admin-payment-claims.routes');
+const adminDashboardRoutes = require('./modules/admin-dashboard/admin-dashboard.routes');
 
 const notFoundMiddleware = require('./middleware/notFound.middleware');
 const errorMiddleware = require('./middleware/error.middleware');
@@ -83,6 +84,7 @@ app.use('/api/admin/plans', plansRoutes);
 app.use('/api/admin/modules', modulesRoutes);
 app.use('/api/admin', subscriptionsRoutes);
 app.use('/api/admin/payment-claims', adminPaymentClaimsRoutes);
+app.use('/api/admin/dashboard', adminDashboardRoutes);
 
 app.use('/api/shop/auth', shopAuthLimiter, shopAuthRoutes);
 app.use('/api/shop/auth', shopAuthLimiter, shopOtpRoutes);
