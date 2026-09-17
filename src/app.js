@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 
 const env = require('./config/env');
+const prisma = require('./config/prisma');
 const { globalLimiter, createAuthLimiter } = require('./middleware/rateLimit.middleware');
 
 // Independent counters — a burst on one shouldn't lock out the other.
@@ -44,7 +45,20 @@ app.use(express.json({ limit: '15mb' }));
 app.use(morgan('dev'));
 app.use('/api', globalLimiter);
 
-app.get('/health', (req, res) => res.json({ success: true, data: { status: 'ok' } }));
+// Used by the app to poll "is it safe to retry yet" after a cold-start 5xx —
+// deliberately checks the database too (not just that Express is up), since
+// Neon's own autosuspend means the process can be listening and answering
+// requests seconds before Prisma can actually reach it. A client that treats
+// a DB-blind health check as "ready" can retry straight into the same
+// connection error it was just waiting out.
+app.get('/health', async (req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ success: true, data: { status: 'ok' } });
+  } catch (err) {
+    res.status(503).json({ success: false, error: { message: 'Database not ready' } });
+  }
+});
 
 app.use('/api/admin/auth', adminAuthLimiter, adminAuthRoutes);
 app.use('/api/admin/shops', shopsRoutes);
