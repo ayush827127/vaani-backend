@@ -36,13 +36,4 @@ router.post(
 router.get('/payment-claims', requireShop, controller.listMyPaymentClaims);
 router.get('/subscription/voice-usage', requireShop, controller.getVoiceUsage);
 
-// TEMPORARY diagnostic aliases — identical handlers, neutral path names with
-// no "payment"/"subscription" wording, to test whether something in front
-// of this app (Render's own edge, not our code — confirmed by these routes'
-// failing responses carrying a different CSP than helmet ever sets) is
-// blocking on the URL text itself. Remove once the /payment-claims and
-// /subscription/voice-usage failures are root-caused.
-router.get('/_diag/claims-alias', requireShop, controller.listMyPaymentClaims);
-router.get('/_diag/usage-alias', requireShop, controller.getVoiceUsage);
-
 module.exports = router;

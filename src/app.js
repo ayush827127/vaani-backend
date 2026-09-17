@@ -72,42 +72,6 @@ app.get('/health', async (req, res) => {
   }
 });
 
-// TEMPORARY diagnostic — deliberately throws, unrelated to any Prisma model,
-// to isolate whether errorMiddleware itself (specifically the ErrorLog
-// write it now does) is what's crashing into Express's built-in fallback
-// handler, or whether that's isolated to specific route handlers. Remove
-// once /payment-claims and /subscription/voice-usage are root-caused.
-app.get('/_diag/throw', () => {
-  throw new Error('deliberate diagnostic error, not a real bug');
-});
-
-// TEMPORARY diagnostic — reports what THIS deployed process's own database
-// connection actually sees, to check whether Render's configured
-// DATABASE_URL (set separately in its dashboard, not from this repo) points
-// at the same database used for local testing. ErrorLog staying empty even
-// after errorMiddleware stopped crashing is the symptom this is checking.
-app.get('/_diag/dbinfo', async (req, res) => {
-  try {
-    const shopCount = await prisma.shop.count();
-    const claimCount = await prisma.paymentClaim.count();
-    const errorLogCount = await prisma.errorLog.count();
-    const dbNameRow = await prisma.$queryRaw`SELECT current_database() as db`;
-    const tables = await prisma.$queryRaw`SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name`;
-    res.json({
-      success: true,
-      data: {
-        shopCount,
-        claimCount,
-        errorLogCount,
-        currentDatabase: dbNameRow[0]?.db,
-        tables: tables.map((t) => t.table_name),
-      },
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, error: { message: err.message, stack: err.stack } });
-  }
-});
-
 app.use('/api/admin/auth', adminAuthLimiter, adminAuthRoutes);
 app.use('/api/admin/shops', shopsRoutes);
 app.use('/api/admin/shops/:shopId/users', shopUsersRoutes);
