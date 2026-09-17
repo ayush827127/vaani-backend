@@ -34,6 +34,18 @@ const errorMiddleware = require('./middleware/error.middleware');
 
 const app = express();
 
+// Render's own proxy sits directly in front of this process (with Cloudflare
+// in front of that), and both add an X-Forwarded-For header on every real
+// request. Without telling Express to trust that one hop, express-rate-limit
+// throws internally on seeing an X-Forwarded-For header it wasn't told to
+// expect (ERR_ERL_UNEXPECTED_X_FORWARDED_FOR) — intermittently, depending on
+// its internal store timing, which is exactly why this surfaced as
+// unexplained, hard-to-reproduce 500s on essentially any /api/* route rather
+// than a clean, consistent error. `1` trusts exactly the nearest hop
+// (Render's own proxy), which is the standard safe setting for apps
+// deployed behind a single PaaS-managed reverse proxy.
+app.set('trust proxy', 1);
+
 app.use(helmet());
 // Only matters for browser clients (admin panel / future shop web portal) —
 // native app HTTP clients aren't subject to CORS at all. Open to all origins:
