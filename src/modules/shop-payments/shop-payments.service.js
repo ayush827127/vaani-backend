@@ -18,6 +18,22 @@ function balanceDelta(type, amount) {
       return { outstanding: -amount, advance: 0 };
     case 'advance_used':
       return { outstanding: 0, advance: -amount };
+    // 'manual_credit' — a khata-style ledger entry ("Give Credit" in the
+    // app): the shopkeeper records goods/cash given on credit with no
+    // formal invoice. 'invoice_due' — the pending portion of a new invoice
+    // at creation time, recorded as its own ledger row so a customer's full
+    // debit/credit history can be reconstructed from payment_transactions
+    // alone. 'invoice_due_reversal' — the matching write-off when a void/
+    // return shrinks or clears that due before it's paid. All three only
+    // ever originate from the phone (see invoice_repository.dart /
+    // give_credit_sheet.dart); an admin can't create them directly since
+    // there's no invoice picker here, but they still need to be understood
+    // for balance reconciliation once synced.
+    case 'manual_credit':
+    case 'invoice_due':
+      return { outstanding: amount, advance: 0 };
+    case 'invoice_due_reversal':
+      return { outstanding: -amount, advance: 0 };
     default:
       // 'bill_payment' (cash collected at checkout, already reflected on the
       // invoice itself) and any unrecognized type — no customer-level effect.
