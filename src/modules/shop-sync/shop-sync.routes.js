@@ -4,7 +4,7 @@ const validate = require('../../middleware/validate.middleware');
 const { requireShop, requireActiveShop } = require('../../middleware/shopAuth.middleware');
 const controller = require('./shop-sync.controller');
 
-const productSchema = z.object({
+const itemSchema = z.object({
   localId: z.number().int(),
   name: z.string(),
   sku: z.string().nullable().optional(),
@@ -17,6 +17,8 @@ const productSchema = z.object({
   reorderLevel: z.number().int(),
   imagePath: z.string().nullable().optional(),
   imageUrl: z.string().nullable().optional(),
+  itemType: z.enum(['PRODUCT', 'SERVICE']).optional(),
+  inventoryEnabled: z.boolean().optional(),
   aliases: z.array(z.string()).optional(),
   isActive: z.boolean(),
   createdAt: z.string(),
@@ -40,8 +42,9 @@ const customerSchema = z.object({
 
 const invoiceItemSchema = z.object({
   localId: z.number().int(),
-  productId: z.number().int(),
-  productName: z.string(),
+  itemId: z.number().int(),
+  itemName: z.string(),
+  itemType: z.enum(['PRODUCT', 'SERVICE']).optional(),
   quantity: z.number().int(),
   sellingPrice: z.number(),
   gstRate: z.number(),
@@ -73,7 +76,7 @@ const invoiceSchema = z.object({
 
 const inventoryTransactionSchema = z.object({
   localId: z.number().int(),
-  productId: z.number().int(),
+  itemId: z.number().int(),
   invoiceId: z.number().int().nullable().optional(),
   type: z.string(),
   quantityChange: z.number().int(),
@@ -110,7 +113,7 @@ const shopProfileSchema = z.object({
 
 const syncSchema = z.object({
   shopProfile: shopProfileSchema.optional(),
-  products: z.array(productSchema).optional(),
+  items: z.array(itemSchema).optional(),
   customers: z.array(customerSchema).optional(),
   invoices: z.array(invoiceSchema).optional(),
   inventoryTransactions: z.array(inventoryTransactionSchema).optional(),

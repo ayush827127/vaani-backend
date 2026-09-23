@@ -19,22 +19,22 @@ async function list(shopId, { search, page = 1, limit = 20 }) {
   };
   const skip = (page - 1) * limit;
   const [items, total] = await Promise.all([
-    prisma.syncedProduct.findMany({ where, skip, take: limit, orderBy: { name: 'asc' } }),
-    prisma.syncedProduct.count({ where }),
+    prisma.syncedItem.findMany({ where, skip, take: limit, orderBy: { name: 'asc' } }),
+    prisma.syncedItem.count({ where }),
   ]);
   return { items, total, page, limit };
 }
 
 async function getById(shopId, id) {
-  const product = await prisma.syncedProduct.findFirst({ where: { id, shopId } });
-  if (!product) throw new AppError('Product not found', 404);
-  return product;
+  const item = await prisma.syncedItem.findFirst({ where: { id, shopId } });
+  if (!item) throw new AppError('Item not found', 404);
+  return item;
 }
 
 async function create(shopId, data) {
   const now = new Date();
-  return createWithNegativeLocalId(prisma, 'syncedProduct', shopId, (tx, localId) =>
-    tx.syncedProduct.create({
+  return createWithNegativeLocalId(prisma, 'syncedItem', shopId, (tx, localId) =>
+    tx.syncedItem.create({
       data: {
         shopId,
         localId,
@@ -58,7 +58,7 @@ async function create(shopId, data) {
 
 async function update(shopId, id, data) {
   await getById(shopId, id);
-  return prisma.syncedProduct.update({
+  return prisma.syncedItem.update({
     where: { id },
     data: { ...data, localUpdatedAt: new Date() },
   });
@@ -67,31 +67,31 @@ async function update(shopId, id, data) {
 async function remove(shopId, id) {
   await getById(shopId, id);
   // Soft delete — a tombstone the phone's pull-sync can see. Never a hard
-  // delete: that would leave the phone with no way to find out this product
+  // delete: that would leave the phone with no way to find out this item
   // was removed on the admin side.
-  await prisma.syncedProduct.update({
+  await prisma.syncedItem.update({
     where: { id },
     data: { deletedAt: new Date(), localUpdatedAt: new Date() },
   });
 }
 
 async function setImage(shopId, id, buffer) {
-  const product = await getById(shopId, id);
+  const item = await getById(shopId, id);
   const imageUrl = await replaceImage({
     buffer,
-    folder: `vaani/shops/${shopId}/products`,
-    previousUrl: product.imageUrl,
+    folder: `vaani/shops/${shopId}/items`,
+    previousUrl: item.imageUrl,
   });
-  return prisma.syncedProduct.update({
+  return prisma.syncedItem.update({
     where: { id },
     data: { imageUrl, localUpdatedAt: new Date() },
   });
 }
 
 async function clearImage(shopId, id) {
-  const product = await getById(shopId, id);
-  await deleteImage(product.imageUrl);
-  return prisma.syncedProduct.update({
+  const item = await getById(shopId, id);
+  await deleteImage(item.imageUrl);
+  return prisma.syncedItem.update({
     where: { id },
     data: { imageUrl: null, localUpdatedAt: new Date() },
   });

@@ -5,8 +5,9 @@ const { requireAdmin } = require('../../middleware/auth.middleware');
 const controller = require('./shop-invoices.controller');
 
 const itemSchema = z.object({
-  productId: z.number().int(),
-  productName: z.string().min(1),
+  itemId: z.number().int(),
+  itemName: z.string().min(1),
+  itemType: z.enum(['PRODUCT', 'SERVICE']).optional(),
   quantity: z.number().int().positive(),
   sellingPrice: z.number(),
   gstRate: z.number().optional(),

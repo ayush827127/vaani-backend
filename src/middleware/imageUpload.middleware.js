@@ -1,7 +1,7 @@
 const multer = require('multer');
 const AppError = require('../utils/AppError');
 
-// Memory storage — files are small (product photos/logos) and go straight
+// Memory storage — files are small (item photos/logos) and go straight
 // to Cloudinary, never touch disk.
 const upload = multer({
   storage: multer.memoryStorage(),

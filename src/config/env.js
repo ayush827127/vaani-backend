@@ -32,7 +32,7 @@ module.exports = {
     apiKey: process.env.NINZA_SMS_API_KEY,
     senderId: process.env.NINZA_SMS_SENDER_ID,
   },
-  // Admin-panel image uploads/deletes (product photos, shop logo) go through
+  // Admin-panel image uploads/deletes (item photos, shop logo) go through
   // the backend using the API key/secret — unlike the phone app, which
   // uploads straight to Cloudinary via an unsigned preset and never touches
   // these. cloudName is duplicated from the phone's own copy since this is a

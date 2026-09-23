@@ -77,7 +77,7 @@ model Shop {
   moduleOverrides ShopModuleOverride[]
   paymentClaims   PaymentClaim[]
 
-  syncedProducts              SyncedProduct[]
+  syncedItems                 SyncedItem[]
   syncedCustomers             SyncedCustomer[]
   syncedInvoices              SyncedInvoice[]
   syncedInventoryTransactions SyncedInventoryTransaction[]
@@ -216,30 +216,38 @@ model ShopUserModuleAccess {
 // an unconditional tombstone and every other field as most-recent-wins by
 // comparing localUpdatedAt. ─────────────────────────────────────────────────
 
-model SyncedProduct {
-  id             String    @id @default(uuid())
-  shopId         String
-  localId        Int
-  name           String
-  sku            String?
-  barcode        String?
-  category       String?
-  costPrice      Float
-  sellingPrice   Float
-  gstRate        Float
-  stockQuantity  Int
-  reorderLevel   Int
-  imagePath      String?
-  imageUrl       String?
-  aliases        String[]  @default([])
-  isActive       Boolean
+model SyncedItem {
+  id               String    @id @default(uuid())
+  shopId           String
+  localId          Int
+  name             String
+  sku              String?
+  barcode          String?
+  category         String?
+  costPrice        Float
+  sellingPrice     Float
+  gstRate          Float
+  stockQuantity    Int
+  reorderLevel     Int
+  imagePath        String?
+  imageUrl         String?
+  // 'PRODUCT' | 'SERVICE' — a service never carries stock; see
+  // inventoryEnabled below for what billing actually gates on.
+  itemType         String    @default("PRODUCT")
+  // The real authority for whether billing validates/deducts stock for this
+  // item — independent of itemType (see the matching note on the Flutter
+  // Item model). Defaults true: every row that existed before this column
+  // was a physical product tracked exactly like this.
+  inventoryEnabled Boolean   @default(true)
+  aliases          String[]  @default([])
+  isActive         Boolean
   // Independent from isActive (an existing, separate status toggle already
   // exposed in the admin panel) — set only by an admin-panel delete, and
-  // read only by the phone's pull-sync to know a product was removed.
-  deletedAt      DateTime?
-  localCreatedAt DateTime
-  localUpdatedAt DateTime
-  syncedAt       DateTime  @default(now())
+  // read only by the phone's pull-sync to know a item was removed.
+  deletedAt        DateTime?
+  localCreatedAt   DateTime
+  localUpdatedAt   DateTime
+  syncedAt         DateTime  @default(now())
 
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
@@ -306,16 +314,20 @@ model SyncedInvoice {
 }
 
 model SyncedInvoiceItem {
-  id             String @id @default(uuid())
-  invoiceId      String
-  localId        Int
-  localProductId Int
-  productName    String
-  quantity       Int
-  sellingPrice   Float
-  gstRate        Float
-  gstAmount      Float
-  lineTotal      Float
+  id           String @id @default(uuid())
+  invoiceId    String
+  localId      Int
+  localItemId  Int
+  itemName     String
+  // Snapshotted at sale time — see the matching note on Flutter's
+  // InvoiceItem.itemType. Defaults 'PRODUCT': every line synced before this
+  // column existed really was a physical product.
+  itemType     String @default("PRODUCT")
+  quantity     Int
+  sellingPrice Float
+  gstRate      Float
+  gstAmount    Float
+  lineTotal    Float
 
   invoice SyncedInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
@@ -326,7 +338,7 @@ model SyncedInventoryTransaction {
   id             String   @id @default(uuid())
   shopId         String
   localId        Int
-  localProductId Int
+  localItemId    Int
   localInvoiceId Int?
   type           String
   quantityChange Int
@@ -371,13 +383,13 @@ model SyncedPaymentTransaction {
 // Deliberately no relation to Shop: the shop/request context might itself
 // be the thing that's broken, and this must never fail to write because of it.
 model ErrorLog {
-  id         String   @id @default(uuid())
-  method     String
-  path       String
-  statusCode Int
-  message    String
-  stack      String?
-  shopId     String?
+  id          String   @id @default(uuid())
+  method      String
+  path        String
+  statusCode  Int
+  message     String
+  stack       String?
+  shopId      String?
   bodyPreview String?
-  createdAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
 }

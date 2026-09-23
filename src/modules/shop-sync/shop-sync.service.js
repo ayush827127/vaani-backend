@@ -1,6 +1,6 @@
 const prisma = require('../../config/prisma');
 
-function productFields(p) {
+function itemFields(p) {
   return {
     name: p.name,
     sku: p.sku ?? null,
@@ -18,11 +18,13 @@ function productFields(p) {
     // meant any push where the phone's local copy hadn't caught up yet
     // (right after a fresh login, before the next pull restores it) wiped
     // an already-uploaded image on the existing row. This was a real,
-    // confirmed data-loss bug — a shop's product photo (and the shop logo,
+    // confirmed data-loss bug — a shop's item photo (and the shop logo,
     // fixed the same way) could vanish from the backend after logging out
     // and back in.
     ...(p.imagePath ? { imagePath: p.imagePath } : {}),
     ...(p.imageUrl ? { imageUrl: p.imageUrl } : {}),
+    itemType: p.itemType ?? 'PRODUCT',
+    inventoryEnabled: p.inventoryEnabled ?? true,
     aliases: p.aliases ?? [],
     isActive: p.isActive,
     localCreatedAt: new Date(p.createdAt),
@@ -41,7 +43,7 @@ function customerFields(c) {
     totalOutstanding: c.totalOutstanding,
     advanceBalance: c.advanceBalance,
     lastVisit: c.lastVisit ? new Date(c.lastVisit) : null,
-    // Same reasoning as imageUrl in productFields() above — never wipe an
+    // Same reasoning as imageUrl in itemFields() above — never wipe an
     // already-uploaded photo just because this push's phone-side copy
     // hasn't caught up with it yet.
     ...(c.imageUrl ? { imageUrl: c.imageUrl } : {}),
@@ -77,7 +79,7 @@ function invoiceFields(inv) {
 
 function inventoryTransactionFields(t) {
   return {
-    localProductId: t.productId,
+    localItemId: t.itemId,
     localInvoiceId: t.invoiceId ?? null,
     type: t.type,
     quantityChange: t.quantityChange,
@@ -97,7 +99,7 @@ function paymentTransactionFields(p) {
     paymentMode: p.paymentMode,
     notes: p.notes ?? null,
     localCreatedAt: new Date(p.createdAt),
-    // Unlike product/customer/invoice, this was never wired through here —
+    // Unlike item/customer/invoice, this was never wired through here —
     // every payment ever pushed landed with localUpdatedAt still null, which
     // is exactly what the phone's pull-merge (DateTime.parse on a required
     // field) crashes on for every shop with payment history.
@@ -140,7 +142,7 @@ async function syncData(
   shopId,
   {
     shopProfile,
-    products = [],
+    items = [],
     customers = [],
     invoices = [],
     inventoryTransactions = [],
@@ -148,10 +150,10 @@ async function syncData(
   }
 ) {
   return prisma.$transaction(async (tx) => {
-    await upsertBatch(tx, 'syncedProduct', shopId, products, productFields);
+    await upsertBatch(tx, 'syncedItem', shopId, items, itemFields);
     await upsertBatch(tx, 'syncedCustomer', shopId, customers, customerFields);
 
-    // Invoices themselves are batched the same way as products/customers
+    // Invoices themselves are batched the same way as items/customers
     // above. Items are immutable once created — simplest correct approach is
     // to replace them wholesale rather than diff/upsert each one — batched
     // across *all* invoices (one deleteMany + one createMany) rather than 2
@@ -180,8 +182,9 @@ async function syncData(
         (inv.items ?? []).map((item) => ({
           invoiceId,
           localId: item.localId,
-          localProductId: item.productId,
-          productName: item.productName,
+          localItemId: item.itemId,
+          itemName: item.itemName,
+          itemType: item.itemType ?? 'PRODUCT',
           quantity: item.quantity,
           sellingPrice: item.sellingPrice,
           gstRate: item.gstRate,
@@ -238,7 +241,7 @@ async function syncData(
 
     return {
       received: {
-        products: products.length,
+        items: items.length,
         customers: customers.length,
         invoices: invoices.length,
         inventoryTransactions: inventoryTransactions.length,
@@ -260,13 +263,13 @@ async function syncData(
 }
 
 // ── Pull (cloud → phone) ─────────────────────────────────────────────────
-// Mirrors the push side's JSON field names (localId, customerId/productId
-// rather than the DB's localCustomerId/localProductId, etc.) so the phone's
+// Mirrors the push side's JSON field names (localId, customerId/itemId
+// rather than the DB's localCustomerId/localItemId, etc.) so the phone's
 // merge code can reuse the same shape it already knows from building push
 // payloads. Never include deletedAt in what push writes (see the field
 // builders above) — it's only ever read here, on the way down.
 
-function productOut(p) {
+function itemOut(p) {
   return {
     localId: p.localId,
     name: p.name,
@@ -280,6 +283,8 @@ function productOut(p) {
     reorderLevel: p.reorderLevel,
     imagePath: p.imagePath,
     imageUrl: p.imageUrl,
+    itemType: p.itemType,
+    inventoryEnabled: p.inventoryEnabled,
     aliases: p.aliases,
     isActive: p.isActive,
     deletedAt: p.deletedAt,
@@ -329,8 +334,9 @@ function invoiceOut(inv) {
     createdAt: inv.localCreatedAt,
     updatedAt: inv.localUpdatedAt,
     items: (inv.items ?? []).map((item) => ({
-      productId: item.localProductId,
-      productName: item.productName,
+      itemId: item.localItemId,
+      itemName: item.itemName,
+      itemType: item.itemType,
       quantity: item.quantity,
       sellingPrice: item.sellingPrice,
       gstRate: item.gstRate,
@@ -361,9 +367,9 @@ async function pullData(shopId, since) {
   const serverTime = new Date();
   const changedSince = since ? { gt: since } : undefined;
 
-  const [shop, products, customers, invoices, payments] = await Promise.all([
+  const [shop, items, customers, invoices, payments] = await Promise.all([
     prisma.shop.findUnique({ where: { id: shopId } }),
-    prisma.syncedProduct.findMany({
+    prisma.syncedItem.findMany({
       where: { shopId, ...(changedSince ? { localUpdatedAt: changedSince } : {}) },
     }),
     prisma.syncedCustomer.findMany({
@@ -397,7 +403,7 @@ async function pullData(shopId, since) {
           updatedAt: shop.updatedAt,
         }
       : null,
-    products: products.map(productOut),
+    items: items.map(itemOut),
     customers: customers.map(customerOut),
     invoices: invoices.map(invoiceOut),
     payments: payments.map(paymentOut),

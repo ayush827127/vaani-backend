@@ -3,7 +3,7 @@ const { z } = require('zod');
 const validate = require('../../middleware/validate.middleware');
 const { requireAdmin } = require('../../middleware/auth.middleware');
 const { imageUpload } = require('../../middleware/imageUpload.middleware');
-const controller = require('./shop-products.controller');
+const controller = require('./shop-items.controller');
 
 const createSchema = z.object({
   name: z.string().min(1),
@@ -16,12 +16,14 @@ const createSchema = z.object({
   stockQuantity: z.number().int(),
   reorderLevel: z.number().int(),
   imagePath: z.string().nullable().optional(),
+  itemType: z.enum(['PRODUCT', 'SERVICE']).optional(),
+  inventoryEnabled: z.boolean().optional(),
   isActive: z.boolean().optional(),
 });
 
 const updateSchema = createSchema.partial();
 
-// Mounted at /api/admin/shops/:shopId/products
+// Mounted at /api/admin/shops/:shopId/items
 const router = Router({ mergeParams: true });
 
 router.use(requireAdmin);

@@ -89,8 +89,9 @@ async function create(shopId, data) {
         items: {
           create: computedItems.map((item, i) => ({
             localId: -(i + 1),
-            localProductId: item.productId,
-            productName: item.productName,
+            localItemId: item.itemId,
+            itemName: item.itemName,
+            itemType: item.itemType ?? 'PRODUCT',
             quantity: item.quantity,
             sellingPrice: item.sellingPrice,
             gstRate: item.gstRate ?? 0,
@@ -119,8 +120,8 @@ async function update(shopId, id, data) {
         hasItems
           ? data.items
           : existing.items.map((item) => ({
-              productId: item.localProductId,
-              productName: item.productName,
+              itemId: item.localItemId,
+              itemName: item.itemName,
               quantity: item.quantity,
               sellingPrice: item.sellingPrice,
               gstRate: item.gstRate,
@@ -169,8 +170,9 @@ async function update(shopId, id, data) {
         data: totals.computedItems.map((item, i) => ({
           invoiceId: id,
           localId: -(i + 1),
-          localProductId: item.productId,
-          productName: item.productName,
+          localItemId: item.itemId,
+          itemName: item.itemName,
+          itemType: item.itemType ?? 'PRODUCT',
           quantity: item.quantity,
           sellingPrice: item.sellingPrice,
           gstRate: item.gstRate ?? 0,
@@ -186,7 +188,7 @@ async function update(shopId, id, data) {
 
 async function remove(shopId, id) {
   await getById(shopId, id);
-  // Soft delete — see the matching note on shop-products' remove().
+  // Soft delete — see the matching note on shop-items' remove().
   await prisma.syncedInvoice.update({
     where: { id },
     data: { deletedAt: new Date(), localUpdatedAt: new Date() },

@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 
 const MODULES = [
   { key: 'billing', name: 'Billing', description: 'Voice and manual invoice creation' },
-  { key: 'inventory', name: 'Inventory', description: 'Product catalog and stock management' },
+  { key: 'inventory', name: 'Inventory', description: 'Item catalog and stock management' },
   { key: 'customers', name: 'Customers', description: 'Customer records and history' },
   { key: 'reports', name: 'Reports', description: 'Sales and business reports' },
   { key: 'ai_manager', name: 'AI Manager', description: 'AI-assisted store management insights' },

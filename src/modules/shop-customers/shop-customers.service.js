@@ -67,7 +67,7 @@ async function update(shopId, id, data) {
 
 async function remove(shopId, id) {
   await getById(shopId, id);
-  // Soft delete — see the matching note on shop-products' remove().
+  // Soft delete — see the matching note on shop-items' remove().
   await prisma.syncedCustomer.update({
     where: { id },
     data: { deletedAt: new Date(), localUpdatedAt: new Date() },
