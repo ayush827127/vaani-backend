@@ -79,6 +79,7 @@ const inventoryTransactionSchema = z.object({
   itemId: z.number().int(),
   invoiceId: z.number().int().nullable().optional(),
   type: z.string(),
+  reason: z.string().nullable().optional(),
   quantityChange: z.number().int(),
   stockBefore: z.number().int(),
   stockAfter: z.number().int(),

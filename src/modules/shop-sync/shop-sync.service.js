@@ -82,6 +82,7 @@ function inventoryTransactionFields(t) {
     localItemId: t.itemId,
     localInvoiceId: t.invoiceId ?? null,
     type: t.type,
+    reason: t.reason ?? null,
     quantityChange: t.quantityChange,
     stockBefore: t.stockBefore,
     stockAfter: t.stockAfter,
