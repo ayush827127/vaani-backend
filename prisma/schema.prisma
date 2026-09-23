@@ -259,6 +259,7 @@ model SyncedCustomer {
   totalOutstanding Float
   advanceBalance   Float
   lastVisit        DateTime?
+  imageUrl         String?
   deletedAt        DateTime?
   localCreatedAt   DateTime
   localUpdatedAt   DateTime

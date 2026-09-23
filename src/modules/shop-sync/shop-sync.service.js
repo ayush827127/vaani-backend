@@ -41,6 +41,10 @@ function customerFields(c) {
     totalOutstanding: c.totalOutstanding,
     advanceBalance: c.advanceBalance,
     lastVisit: c.lastVisit ? new Date(c.lastVisit) : null,
+    // Same reasoning as imageUrl in productFields() above — never wipe an
+    // already-uploaded photo just because this push's phone-side copy
+    // hasn't caught up with it yet.
+    ...(c.imageUrl ? { imageUrl: c.imageUrl } : {}),
     localCreatedAt: new Date(c.createdAt),
     localUpdatedAt: new Date(c.updatedAt),
   };
@@ -296,6 +300,7 @@ function customerOut(c) {
     totalOutstanding: c.totalOutstanding,
     advanceBalance: c.advanceBalance,
     lastVisit: c.lastVisit,
+    imageUrl: c.imageUrl,
     deletedAt: c.deletedAt,
     createdAt: c.localCreatedAt,
     updatedAt: c.localUpdatedAt,
