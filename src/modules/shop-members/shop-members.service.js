@@ -158,7 +158,26 @@ async function acceptInvitation({ invitationId, userId, phone }) {
     entityId: membership.id,
     metadata: { role: invitation.role },
   });
-  return membership;
+
+  // The accepting device has no other way to learn this shop's profile
+  // (it never held a legacy Shop-token, so it never called
+  // /api/shop/auth/login) — carrying it here lets the client create its
+  // local Shop row from this one response, same as checkExistingCloudShop's
+  // response already does for the "returning shop, new device" case.
+  const shop = await prisma.shop.findUnique({
+    where: { id: invitation.shopId },
+    select: {
+      name: true,
+      ownerName: true,
+      address: true,
+      gstNumber: true,
+      currency: true,
+      gstEnabled: true,
+      defaultGstRate: true,
+      upiId: true,
+    },
+  });
+  return { ...membership, shop };
 }
 
 async function rejectInvitation({ invitationId, phone }) {

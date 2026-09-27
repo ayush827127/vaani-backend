@@ -2,6 +2,7 @@ const mockPrisma = {
   shopUser: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn(), create: jest.fn() },
   invitation: { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
   user: { findUnique: jest.fn() },
+  shop: { findUnique: jest.fn() },
   shopUserPermission: { findMany: jest.fn(), upsert: jest.fn() },
 };
 jest.mock('../../config/prisma', () => mockPrisma);
@@ -14,6 +15,7 @@ const service = require('./shop-members.service');
 beforeEach(() => {
   jest.clearAllMocks();
   mockPrisma.shopUserPermission.findMany.mockResolvedValue([]); // no overrides, by default
+  mockPrisma.shop.findUnique.mockResolvedValue({ name: 'ABC Store', ownerName: 'Ramesh' });
 });
 
 describe('inviteMember', () => {
@@ -109,6 +111,18 @@ describe('acceptInvitation', () => {
 
     expect(result.id).toBe('su-new');
     expect(mockRecord).toHaveBeenCalledWith(expect.objectContaining({ action: 'MEMBER_ACCEPTED', userId: 'user-1' }));
+  });
+
+  test('the response is enriched with the shop\'s profile — the accepting device has no other way to learn it', async () => {
+    mockPrisma.invitation.findUnique.mockResolvedValue(invitation);
+    mockPrisma.shopUser.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+    mockPrisma.user.findUnique.mockResolvedValue({ id: 'user-1', name: 'Amit', phone: '9876543210' });
+    mockPrisma.shopUser.create.mockResolvedValue({ id: 'su-new' });
+    mockPrisma.shop.findUnique.mockResolvedValue({ name: 'ABC Store', ownerName: 'Ramesh' });
+
+    const result = await service.acceptInvitation({ invitationId: 'inv-1', userId: 'user-1', phone: '9876543210' });
+
+    expect(result.shop).toEqual({ name: 'ABC Store', ownerName: 'Ramesh' });
   });
 
   test('accepting twice is idempotent — the second call is a no-op, not a duplicate', async () => {

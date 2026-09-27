@@ -16,20 +16,22 @@ function membershipView(m) {
   return { shopId: m.shopId, shopName: m.shop.name, role: m.role, status: m.shop.status };
 }
 
-// Existing Users only — mirrors shop-auth's login() 404-if-not-found
-// behavior exactly. Creating a brand-new User (via a future invitation-
-// acceptance flow, or a redesigned signup) is out of scope for this phase.
+// Always succeeds — auto-creates the User on first login, mirroring what
+// shop-auth.service.js's register() already does for the owner case. Zero
+// active memberships is a normal, valid state (a freshly-invited person who
+// hasn't accepted yet), not an error: they still need a User-token to see
+// and accept their invitation via /api/shop/invitations, which requireUser
+// alone gates — this used to 404/403 exactly the caller who needed it most.
+// A phone that already has memberships behaves identically to before; this
+// is a widening, not a behavior change for any existing success case.
 async function login(phone) {
-  const user = await prisma.user.findUnique({ where: { phone } });
-  if (!user) {
-    throw new AppError('No account found for this phone number', 404);
-  }
+  const user = await prisma.user.upsert({
+    where: { phone },
+    create: { phone },
+    update: {}, // never overwrite an existing User's name/phone
+  });
 
   const memberships = await activeMembershipsForUser(user.id);
-  if (memberships.length === 0) {
-    throw new AppError('This account has no active business membership', 403);
-  }
-
   const activeShopId = memberships.length === 1 ? memberships[0].shopId : null;
   const token = signUserToken(user, activeShopId);
   return { token, user, activeShopId, memberships: memberships.map(membershipView) };

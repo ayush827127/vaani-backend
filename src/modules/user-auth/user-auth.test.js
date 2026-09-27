@@ -1,5 +1,5 @@
 const mockPrisma = {
-  user: { findUnique: jest.fn() },
+  user: { findUnique: jest.fn(), upsert: jest.fn() },
   shopUser: { findMany: jest.fn(), findFirst: jest.fn() },
 };
 
@@ -25,19 +25,35 @@ beforeEach(() => {
 });
 
 describe('user-auth.service.login', () => {
-  test('unknown phone: 404', async () => {
-    mockPrisma.user.findUnique.mockResolvedValue(null);
-    await expect(service.login('9999999999')).rejects.toMatchObject({ status: 404 });
-  });
-
-  test('zero active memberships: 403', async () => {
-    mockPrisma.user.findUnique.mockResolvedValue({ id: 'user-1', phone: '9876543210' });
+  test('a brand-new phone (no User row yet) auto-creates one and succeeds with an empty membership list', async () => {
+    mockPrisma.user.upsert.mockResolvedValue({ id: 'user-new', phone: '9999999999' });
     mockPrisma.shopUser.findMany.mockResolvedValue([]);
-    await expect(service.login('9876543210')).rejects.toMatchObject({ status: 403 });
+
+    const result = await service.login('9999999999');
+
+    expect(mockPrisma.user.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { phone: '9999999999' },
+        create: { phone: '9999999999' },
+        update: {},
+      })
+    );
+    expect(result.activeShopId).toBeNull();
+    expect(result.memberships).toEqual([]);
   });
 
-  test('exactly one membership: auto-selects activeShopId', async () => {
-    mockPrisma.user.findUnique.mockResolvedValue({ id: 'user-1', phone: '9876543210' });
+  test('an existing User with zero active memberships (invited, not yet accepted) is a normal success, not an error', async () => {
+    mockPrisma.user.upsert.mockResolvedValue({ id: 'user-1', phone: '9876543210' });
+    mockPrisma.shopUser.findMany.mockResolvedValue([]);
+
+    const result = await service.login('9876543210');
+    expect(result.activeShopId).toBeNull();
+    expect(result.memberships).toEqual([]);
+    expect(typeof result.token).toBe('string');
+  });
+
+  test('exactly one membership: auto-selects activeShopId, completely unaffected by the widening', async () => {
+    mockPrisma.user.upsert.mockResolvedValue({ id: 'user-1', phone: '9876543210' });
     mockPrisma.shopUser.findMany.mockResolvedValue([
       { shopId: 'shop-1', role: 'OWNER', shop: { id: 'shop-1', name: 'ABC Store', status: 'ACTIVE' } },
     ]);
@@ -50,7 +66,7 @@ describe('user-auth.service.login', () => {
   });
 
   test('multiple memberships: activeShopId null, all memberships listed', async () => {
-    mockPrisma.user.findUnique.mockResolvedValue({ id: 'user-1', phone: '9876543210' });
+    mockPrisma.user.upsert.mockResolvedValue({ id: 'user-1', phone: '9876543210' });
     mockPrisma.shopUser.findMany.mockResolvedValue([
       { shopId: 'shop-1', role: 'OWNER', shop: { id: 'shop-1', name: 'ABC Store', status: 'ACTIVE' } },
       { shopId: 'shop-2', role: 'CASHIER', shop: { id: 'shop-2', name: 'XYZ Wholesale', status: 'ACTIVE' } },
