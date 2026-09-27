@@ -7,6 +7,7 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "seed": "node prisma/seed.js",
+    "test": "jest",
     "postinstall": "prisma generate"
   },
   "prisma": {
@@ -27,6 +28,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "jest": "^29.7.0",
     "nodemon": "^3.1.4",
     "prisma": "^5.20.0"
   }

@@ -43,6 +43,25 @@ enum ShopUserRole {
   CASHIER
 }
 
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ShopUserStatus {
+  ACTIVE
+  INACTIVE
+  REMOVED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  REVOKED
+  EXPIRED
+}
+
 model AdminUser {
   id        String    @id @default(uuid())
   name      String
@@ -82,6 +101,26 @@ model Shop {
   syncedInvoices              SyncedInvoice[]
   syncedInventoryTransactions SyncedInventoryTransaction[]
   syncedPaymentTransactions   SyncedPaymentTransaction[]
+
+  invitations Invitation[]
+  auditLogs   AuditLog[]
+}
+
+// The real person identity for the phone app — introduced alongside the
+// multi-user/multi-shop migration's Phase 1 (see the plan doc). Dormant in
+// this phase: nothing in the current authentication flow reads or writes
+// this table yet, and Shop.phone remains the login identity for now. Every
+// User is linked to zero or more Shops via ShopUser (see ShopUser.userId).
+model User {
+  id        String     @id @default(uuid())
+  phone     String     @unique
+  name      String?
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  memberships     ShopUser[]
+  invitationsSent Invitation[]
 }
 
 model Module {
@@ -177,18 +216,54 @@ model PaymentClaim {
 }
 
 model ShopUser {
-  id        String       @id @default(uuid())
+  id        String         @id @default(uuid())
   shopId    String
-  name      String
-  phone     String
-  role      ShopUserRole @default(CASHIER)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  // Nullable — existing (pre-multi-user) rows have none yet, and Phase 1's
+  // backfill only links a userId where it can safely identify one (see
+  // scripts/backfill-shop-owners.js). Becomes the real authorization key once
+  // a later phase wires auth through membership instead of the legacy Shop
+  // token — this column is dormant until then.
+  userId    String?
+  // Metadata only in this phase — not read by any authorization/auth code
+  // path yet (see the matching note on ShopUserPermission below).
+  status    ShopUserStatus @default(ACTIVE)
+  removedAt DateTime?
+  name      String         // kept as a denormalized display field — may
+  phone     String         // diverge from the linked User's name/phone over time
+  role      ShopUserRole   @default(CASHIER)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
 
   shop         Shop                   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  user         User?                  @relation(fields: [userId], references: [id])
   moduleAccess ShopUserModuleAccess[]
+  permissions  ShopUserPermission[]
 
   @@unique([shopId, phone])
+  // Index only, not unique — userId is nullable and multiple existing rows
+  // will legitimately have no userId at all until backfilled/linked. A
+  // future phase adds @@unique([shopId, userId]) once every row is required
+  // to have one.
+  @@index([shopId, userId])
+}
+
+// Granular module.action permission overrides for a ShopUser (e.g.
+// "customer.view", "bill.delete") — finer-grained than
+// ShopUserModuleAccess's per-module view/edit toggle above. No rows are
+// created for this in Phase 1; role-default resolution and enforcement
+// belongs to the future authorization phase. This table only adds the place
+// to store overrides once that logic exists.
+model ShopUserPermission {
+  id         String   @id @default(uuid())
+  shopUserId String
+  permission String
+  granted    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  shopUser ShopUser @relation(fields: [shopUserId], references: [id], onDelete: Cascade)
+
+  @@unique([shopUserId, permission])
 }
 
 model ShopUserModuleAccess {
@@ -255,6 +330,11 @@ model SyncedItem {
   localCreatedAt   DateTime
   localUpdatedAt   DateTime
   syncedAt         DateTime  @default(now())
+  // Plain id, no FK relation — same convention as PaymentClaim.reviewedBy,
+  // since this is a sync-mirrored row keyed by (shopId, localId), not one
+  // Prisma manages relationally. Nothing populates this yet (Phase 1 schema
+  // only); historical rows stay NULL — never invented.
+  createdByUserId  String?
 
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
@@ -279,6 +359,8 @@ model SyncedCustomer {
   localCreatedAt   DateTime
   localUpdatedAt   DateTime
   syncedAt         DateTime  @default(now())
+  // See the matching note on SyncedItem.createdByUserId.
+  createdByUserId  String?
 
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
@@ -313,6 +395,8 @@ model SyncedInvoice {
   localCreatedAt  DateTime
   localUpdatedAt  DateTime
   syncedAt        DateTime  @default(now())
+  // See the matching note on SyncedItem.createdByUserId.
+  createdByUserId String?
 
   shop  Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
   items SyncedInvoiceItem[]
@@ -355,6 +439,8 @@ model SyncedInventoryTransaction {
   notes          String?
   localCreatedAt DateTime
   syncedAt       DateTime @default(now())
+  // See the matching note on SyncedItem.createdByUserId.
+  createdByUserId String?
 
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
@@ -378,10 +464,54 @@ model SyncedPaymentTransaction {
   // to the phone's "changed since" pull query, same as every other entity.
   localUpdatedAt  DateTime?
   syncedAt        DateTime  @default(now())
+  // See the matching note on SyncedItem.createdByUserId.
+  createdByUserId String?
 
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
   @@unique([shopId, localId])
+}
+
+// A phone-number invitation for a person to join a Shop with a given role.
+// No unique constraint on (shopId, invitedPhone): a revoked/expired
+// invitation must be re-sendable, so "no duplicate *pending* invite" is a
+// future service-layer check, not a DB constraint. Dormant in Phase 1 — no
+// route creates or reads these yet.
+model Invitation {
+  id              String           @id @default(uuid())
+  shopId          String
+  invitedPhone    String
+  role            ShopUserRole     @default(CASHIER)
+  invitedByUserId String?
+  status          InvitationStatus @default(PENDING)
+  expiresAt       DateTime
+  createdAt       DateTime         @default(now())
+  acceptedAt      DateTime?
+
+  shop      Shop  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  invitedBy User? @relation(fields: [invitedByUserId], references: [id])
+
+  @@index([shopId, invitedPhone, status])
+}
+
+// Table only in Phase 1 — nothing writes to this yet; that's a future
+// authorization/audit phase. shopId/userId here must always be server-
+// derived when writes begin, never trusted from the client.
+model AuditLog {
+  id         String   @id @default(uuid())
+  shopId     String
+  userId     String?
+  action     String
+  module     String?
+  entityType String?
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, createdAt])
+  @@index([shopId, entityType, entityId])
 }
 
 // Server-side error capture — errorMiddleware writes here for every 5xx so
