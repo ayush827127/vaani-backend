@@ -332,9 +332,14 @@ model SyncedItem {
   syncedAt         DateTime  @default(now())
   // Plain id, no FK relation — same convention as PaymentClaim.reviewedBy,
   // since this is a sync-mirrored row keyed by (shopId, localId), not one
-  // Prisma manages relationally. Nothing populates this yet (Phase 1 schema
-  // only); historical rows stay NULL — never invented.
+  // Prisma manages relationally. Populated on create only (see syncData's
+  // attribution()); historical rows from before that existed stay NULL —
+  // never invented.
   createdByUserId  String?
+  // Populated on update only — the inverse of createdByUserId, applied via
+  // buildFields (the path upsertBatch's update() call uses) rather than
+  // buildCreateOnlyFields.
+  updatedByUserId  String?
 
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
@@ -361,6 +366,7 @@ model SyncedCustomer {
   syncedAt         DateTime  @default(now())
   // See the matching note on SyncedItem.createdByUserId.
   createdByUserId  String?
+  updatedByUserId  String?
 
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
@@ -397,6 +403,7 @@ model SyncedInvoice {
   syncedAt        DateTime  @default(now())
   // See the matching note on SyncedItem.createdByUserId.
   createdByUserId String?
+  updatedByUserId String?
 
   shop  Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
   items SyncedInvoiceItem[]
@@ -441,6 +448,7 @@ model SyncedInventoryTransaction {
   syncedAt       DateTime @default(now())
   // See the matching note on SyncedItem.createdByUserId.
   createdByUserId String?
+  updatedByUserId String?
 
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
@@ -466,6 +474,16 @@ model SyncedPaymentTransaction {
   syncedAt        DateTime  @default(now())
   // See the matching note on SyncedItem.createdByUserId.
   createdByUserId String?
+  updatedByUserId String?
+  // The customer's totalOutstanding/advanceBalance immediately before this
+  // transaction, captured once at insert time by the phone's
+  // PaymentTransactionRepository.insert() (the single choke point every
+  // payment/ledger mutation already goes through). Nullable — an older app
+  // build that never sends these simply can't be checked for a financial
+  // conflict, never treated as a false-positive mismatch. See syncData()'s
+  // financial-conflict detection.
+  customerOutstandingBefore Float?
+  customerAdvanceBefore     Float?
 
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 

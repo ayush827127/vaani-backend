@@ -49,6 +49,12 @@ async function requireShopOrUserContext(req, res, next) {
       // identically for both paths without any modification either.
       req.shop = { id: decoded.activeShopId, scope: 'user' };
       req.attributedUserId = decoded.userId;
+      // Same shape requireActiveMembership already produces — lets
+      // syncData() resolve this user's effective permissions and filter the
+      // push accordingly. Never set on the legacy-token branch, which is
+      // exactly what tells syncData() to skip permission filtering entirely
+      // for a shop's own device.
+      req.membership = { shopId: membership.shopId, shopUserId: membership.id, role: membership.role };
       return next();
     } catch (err) {
       return next(err);

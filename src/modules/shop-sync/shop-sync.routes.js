@@ -111,6 +111,12 @@ const paymentTransactionSchema = z.object({
   notes: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string().optional(),
+  // Zod strips any undeclared field by default — the exact bug that
+  // silently defeated the item-images sync fix earlier. Must be declared
+  // here or shop-sync.service.js's financial-conflict detection never sees
+  // these regardless of how correctly everything else is wired.
+  customerOutstandingBefore: z.number().optional(),
+  customerAdvanceBefore: z.number().optional(),
 });
 
 const shopProfileSchema = z.object({

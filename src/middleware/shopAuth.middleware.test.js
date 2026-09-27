@@ -38,9 +38,9 @@ test('a User-token with no activeShopId selected: 404', async () => {
   expect(next).toHaveBeenCalledWith(expect.objectContaining({ status: 404 }));
 });
 
-test('a User-token with an active, matching membership sets req.shop.id and req.attributedUserId', async () => {
+test('a User-token with an active, matching membership sets req.shop.id, req.attributedUserId, and req.membership', async () => {
   mockVerifyToken.mockReturnValue({ userId: 'user-1', activeShopId: 'shop-1', scope: 'user' });
-  mockPrisma.shopUser.findFirst.mockResolvedValue({ id: 'su-1', status: 'ACTIVE' });
+  mockPrisma.shopUser.findFirst.mockResolvedValue({ id: 'su-1', shopId: 'shop-1', role: 'CASHIER', status: 'ACTIVE' });
   const req = mockReq('user-token');
   const next = mockNext();
 
@@ -48,6 +48,7 @@ test('a User-token with an active, matching membership sets req.shop.id and req.
 
   expect(req.shop).toEqual({ id: 'shop-1', scope: 'user' });
   expect(req.attributedUserId).toBe('user-1');
+  expect(req.membership).toEqual({ shopId: 'shop-1', shopUserId: 'su-1', role: 'CASHIER' });
   expect(next).toHaveBeenCalledWith();
 });
 
