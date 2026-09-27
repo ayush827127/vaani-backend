@@ -10,6 +10,7 @@ const { globalLimiter, createAuthLimiter } = require('./middleware/rateLimit.mid
 // Independent counters — a burst on one shouldn't lock out the other.
 const adminAuthLimiter = createAuthLimiter();
 const shopAuthLimiter = createAuthLimiter();
+const userAuthLimiter = createAuthLimiter();
 
 const adminAuthRoutes = require('./modules/admin-auth/admin-auth.routes');
 const shopsRoutes = require('./modules/shops/shops.routes');
@@ -18,6 +19,7 @@ const modulesRoutes = require('./modules/modules-catalog/modules.routes');
 const subscriptionsRoutes = require('./modules/subscriptions/subscriptions.routes');
 const shopUsersRoutes = require('./modules/shop-users/shop-users.routes');
 const shopAuthRoutes = require('./modules/shop-auth/shop-auth.routes');
+const userAuthRoutes = require('./modules/user-auth/user-auth.routes');
 const shopOtpRoutes = require('./modules/shop-otp/shop-otp.routes');
 const shopStatusRoutes = require('./modules/shop-status/shop-status.routes');
 const shopSyncRoutes = require('./modules/shop-sync/shop-sync.routes');
@@ -88,6 +90,11 @@ app.use('/api/admin/dashboard', adminDashboardRoutes);
 
 app.use('/api/shop/auth', shopAuthLimiter, shopAuthRoutes);
 app.use('/api/shop/auth', shopAuthLimiter, shopOtpRoutes);
+// New User-based identity (dormant — see the Phase 2 migration plan). Reuses
+// the existing /api/shop/auth OTP endpoints above; this only adds the new
+// login/select-shop/me surface, a separate top-level prefix since User is
+// independent of any one shop.
+app.use('/api/user/auth', userAuthLimiter, userAuthRoutes);
 app.use('/api/shop', shopStatusRoutes);
 app.use('/api/shop', shopSyncRoutes);
 app.use('/api/shop', shopVoiceRoutes);
