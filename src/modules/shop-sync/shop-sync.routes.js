@@ -20,6 +20,20 @@ const itemSchema = z.object({
   itemType: z.enum(['PRODUCT', 'SERVICE']).optional(),
   inventoryEnabled: z.boolean().optional(),
   aliases: z.array(z.string()).optional(),
+  // Was missing entirely — zod strips any undeclared field by default, so
+  // every item's photo gallery was silently dropped by this validator
+  // before shop-sync.service.js ever saw it, defeating the item-images
+  // cloud-sync fix at the wire-validation layer. Shape matches exactly
+  // what the Flutter app's _itemJson sends (data_sync_repository.dart).
+  images: z
+    .array(
+      z.object({
+        imageUrl: z.string().nullable().optional(),
+        sortOrder: z.number().int().optional(),
+        isPrimary: z.boolean().optional(),
+      })
+    )
+    .optional(),
   isActive: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
