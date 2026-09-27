@@ -26,6 +26,11 @@ function itemFields(p) {
     itemType: p.itemType ?? 'PRODUCT',
     inventoryEnabled: p.inventoryEnabled ?? true,
     aliases: p.aliases ?? [],
+    // Same reasoning as imagePath/imageUrl above — only overwrite when this
+    // push actually carries images, so a phone that hasn't uploaded its
+    // gallery yet (or is on an older build that never sends this field)
+    // never wipes an already-synced gallery on an update.
+    ...(p.images && p.images.length ? { images: p.images } : {}),
     isActive: p.isActive,
     localCreatedAt: new Date(p.createdAt),
     localUpdatedAt: new Date(p.updatedAt),
@@ -287,6 +292,7 @@ function itemOut(p) {
     itemType: p.itemType,
     inventoryEnabled: p.inventoryEnabled,
     aliases: p.aliases,
+    images: p.images,
     isActive: p.isActive,
     deletedAt: p.deletedAt,
     createdAt: p.localCreatedAt,

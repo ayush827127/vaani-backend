@@ -240,6 +240,13 @@ model SyncedItem {
   // was a physical product tracked exactly like this.
   inventoryEnabled Boolean   @default(true)
   aliases          String[]  @default([])
+  // The item's full multi-image gallery — [{imageUrl, sortOrder, isPrimary}],
+  // mirroring the phone's item_images table. Only imageUrl travels (never a
+  // local file path, meaningless off-device); the phone matches pulled URLs
+  // back to its own cached files by URL. See itemFields() in
+  // shop-sync.service.js for why push never overwrites this with an empty
+  // array from a phone that hasn't uploaded yet.
+  images           Json      @default("[]")
   isActive         Boolean
   // Independent from isActive (an existing, separate status toggle already
   // exposed in the admin panel) — set only by an admin-panel delete, and
