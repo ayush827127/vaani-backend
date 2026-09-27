@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { z } = require('zod');
 const validate = require('../../middleware/validate.middleware');
-const { requireShop, requireActiveShop } = require('../../middleware/shopAuth.middleware');
+const { requireShopOrUserContext, requireActiveShop } = require('../../middleware/shopAuth.middleware');
 const controller = require('./shop-sync.controller');
 
 const itemSchema = z.object({
@@ -137,7 +137,7 @@ const syncSchema = z.object({
 
 const router = Router();
 
-router.post('/sync', requireShop, requireActiveShop, validate(syncSchema), controller.sync);
-router.get('/sync/pull', requireShop, requireActiveShop, controller.pull);
+router.post('/sync', requireShopOrUserContext, requireActiveShop, validate(syncSchema), controller.sync);
+router.get('/sync/pull', requireShopOrUserContext, requireActiveShop, controller.pull);
 
 module.exports = router;

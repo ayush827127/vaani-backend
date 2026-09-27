@@ -71,3 +71,12 @@ test('resolveOwnerUserId is called exactly once per sync call, not once per reco
 
   expect(mockResolveOwnerUserId).toHaveBeenCalledTimes(1);
 });
+
+test('an explicit attributed user id (User-token path) is used verbatim, and resolveOwnerUserId is not called at all', async () => {
+  await syncData('shop-1', { items: [baseItem] }, 'user-invited-cashier');
+
+  expect(mockResolveOwnerUserId).not.toHaveBeenCalled();
+  expect(mockTx.syncedItem.createMany).toHaveBeenCalledWith({
+    data: [expect.objectContaining({ createdByUserId: 'user-invited-cashier' })],
+  });
+});

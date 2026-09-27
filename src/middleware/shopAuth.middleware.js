@@ -3,6 +3,61 @@ const AppError = require('../utils/AppError');
 const prisma = require('../config/prisma');
 const statusService = require('../modules/shop-status/shop-status.service');
 
+// Accepts EITHER a legacy Shop-scoped token OR the new User-scoped token
+// with an active, verified membership — needed because an invited staff
+// member's phone is never Shop.phone, so a legacy token can never be
+// issued to them; without this, their device could never sync the shop's
+// data at all. A legacy token behaves byte-for-byte identically to
+// requireShop (same req.shop shape) — this is additive, not a replacement.
+// Only used on the two sync routes for now; every other shop-facing route
+// stays on requireShop/requireUser as before.
+async function requireShopOrUserContext(req, res, next) {
+  const header = req.headers.authorization || '';
+  const [scheme, token] = header.split(' ');
+
+  if (scheme !== 'Bearer' || !token) {
+    return next(new AppError('Missing or invalid Authorization header', 401));
+  }
+
+  let decoded;
+  try {
+    decoded = verifyToken(token);
+  } catch (err) {
+    return next(new AppError('Invalid or expired token', 401));
+  }
+
+  if (decoded.scope === 'shop') {
+    req.shop = decoded;
+    return next();
+  }
+
+  if (decoded.scope === 'user') {
+    if (!decoded.activeShopId) {
+      return next(new AppError('No business selected — call select-shop first', 404));
+    }
+    try {
+      const membership = await prisma.shopUser.findFirst({
+        where: { shopId: decoded.activeShopId, userId: decoded.userId },
+      });
+      if (!membership || membership.status !== 'ACTIVE') {
+        return next(new AppError('You are not an active member of this business', 403));
+      }
+      // Same shape requireShop already produces — every downstream
+      // controller/service (which only ever reads req.shop.id) needs zero
+      // changes; requireActiveShop right after this in the route chain
+      // re-queries Shop.status purely from req.shop.id, so it works
+      // identically for both paths without any modification either.
+      req.shop = { id: decoded.activeShopId, scope: 'user' };
+      req.attributedUserId = decoded.userId;
+      return next();
+    } catch (err) {
+      return next(err);
+    }
+  }
+
+  return next(new AppError('Invalid or expired token', 401));
+}
+
 function requireShop(req, res, next) {
   const header = req.headers.authorization || '';
   const [scheme, token] = header.split(' ');
@@ -66,4 +121,4 @@ function requireModule(moduleKey) {
   };
 }
 
-module.exports = { requireShop, requireActiveShop, requireModule };
+module.exports = { requireShop, requireShopOrUserContext, requireActiveShop, requireModule };

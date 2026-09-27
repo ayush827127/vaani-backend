@@ -3,7 +3,10 @@ const { ok } = require('../../utils/apiResponse');
 const service = require('./shop-sync.service');
 
 const sync = asyncHandler(async (req, res) => {
-  const result = await service.syncData(req.shop.id, req.body);
+  // Set only on the User-token path (requireShopOrUserContext) — undefined
+  // for a legacy Shop-token request, in which case syncData() falls back to
+  // Phase 6's resolveOwnerUserId(shopId) exactly as before.
+  const result = await service.syncData(req.shop.id, req.body, req.attributedUserId);
   return ok(res, result);
 });
 

@@ -170,12 +170,18 @@ async function syncData(
     invoices = [],
     inventoryTransactions = [],
     paymentTransactions = [],
-  }
+  },
+  explicitUserId
 ) {
-  // Resolved once per sync call, not per record — this transaction already
-  // has a documented history of timeout problems under real invoice-history
-  // load (see the timeout comment below), so this must never become O(n).
-  const attributedUserId = await resolveOwnerUserId(shopId);
+  // explicitUserId is the real authenticated person when this request came
+  // in on a User-token with an active membership (requireShopOrUserContext)
+  // — more accurate than guessing, since it might not be the owner at all.
+  // Falls back to Phase 6's owner-resolution only for a legacy Shop-token
+  // request, exactly as before. Resolved once per sync call, not per
+  // record — this transaction already has a documented history of timeout
+  // problems under real invoice-history load (see the timeout comment
+  // below), so this must never become O(n).
+  const attributedUserId = explicitUserId ?? (await resolveOwnerUserId(shopId));
   const createAttribution = () => attribution(attributedUserId);
 
   return prisma.$transaction(async (tx) => {
