@@ -20,6 +20,7 @@ const subscriptionsRoutes = require('./modules/subscriptions/subscriptions.route
 const shopUsersRoutes = require('./modules/shop-users/shop-users.routes');
 const shopAuthRoutes = require('./modules/shop-auth/shop-auth.routes');
 const userAuthRoutes = require('./modules/user-auth/user-auth.routes');
+const { membersRouter, invitationsRouter } = require('./modules/shop-members/shop-members.routes');
 const shopOtpRoutes = require('./modules/shop-otp/shop-otp.routes');
 const shopStatusRoutes = require('./modules/shop-status/shop-status.routes');
 const shopSyncRoutes = require('./modules/shop-sync/shop-sync.routes');
@@ -95,6 +96,11 @@ app.use('/api/shop/auth', shopAuthLimiter, shopOtpRoutes);
 // login/select-shop/me surface, a separate top-level prefix since User is
 // independent of any one shop.
 app.use('/api/user/auth', userAuthLimiter, userAuthRoutes);
+// Real, first-use wiring of Phase 2's requireUser/requireActiveMembership
+// and Phase 4's requirePermission — the member-invitation flow that creates
+// a shop's first real second membership. See the shop-members module.
+app.use('/api/shop/members', membersRouter);
+app.use('/api/shop/invitations', invitationsRouter);
 app.use('/api/shop', shopStatusRoutes);
 app.use('/api/shop', shopSyncRoutes);
 app.use('/api/shop', shopVoiceRoutes);
