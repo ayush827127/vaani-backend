@@ -30,6 +30,26 @@ async function register({ name, ownerName, phone, address }) {
         data: { shopId: shop.id, planId: trialPlan.id, status: 'TRIAL', endDate },
       });
     }
+
+    // Keeps the User/ShopUser model in sync for every shop created from
+    // here on — Phase 1's backfill only covered shops that already existed
+    // at that moment; without this, every later signup would never resolve
+    // an owner (see resolveOwnerUserId in user-auth.service.js), silently
+    // breaking sync attribution for any shop registered after that backfill
+    // ran. Best-effort: a failure here must never block registration, which
+    // matters far more than attribution metadata existing from day one.
+    try {
+      const user = await prisma.user.upsert({
+        where: { phone },
+        create: { phone, name: ownerName },
+        update: {}, // never overwrite an existing User's name/phone
+      });
+      await prisma.shopUser.create({
+        data: { shopId: shop.id, userId: user.id, name: ownerName, phone, role: 'OWNER', status: 'ACTIVE' },
+      });
+    } catch (err) {
+      console.error('[register] failed to create User/ShopUser for new shop', shop.id, err);
+    }
   }
 
   const token = signShopToken(shop);

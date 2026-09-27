@@ -1,4 +1,16 @@
 const prisma = require('../../config/prisma');
+const { resolveOwnerUserId } = require('../user-auth/user-auth.service');
+
+// Applied only on create (see upsertBatch's buildCreateOnlyFields param) —
+// createdByUserId is creation-time attribution, never touched again by a
+// later push that only updates the row. Omits the key entirely (rather than
+// setting null) when there's nothing to attribute to, so a plain object
+// spread never clobbers an already-set value on a row this same batch
+// happens to also update elsewhere — though in practice a create and an
+// update for the same (shopId, localId) can never both happen in one batch.
+function attribution(attributedUserId) {
+  return attributedUserId ? { createdByUserId: attributedUserId } : {};
+}
 
 function itemFields(p) {
   return {
@@ -120,7 +132,7 @@ function paymentTransactionFields(p) {
 // collapses the check into one query and, for a first sync or any batch
 // that's mostly-new (the exact shape that blew the invoice-items timeout),
 // most of the work becomes a single createMany instead of N upserts.
-async function upsertBatch(tx, model, shopId, records, buildFields) {
+async function upsertBatch(tx, model, shopId, records, buildFields, buildCreateOnlyFields) {
   if (!records.length) return;
   const localIds = records.map((r) => r.localId);
   const existing = await tx[model].findMany({
@@ -132,7 +144,12 @@ async function upsertBatch(tx, model, shopId, records, buildFields) {
   const toCreate = records.filter((r) => !existingIds.has(r.localId));
   if (toCreate.length) {
     await tx[model].createMany({
-      data: toCreate.map((r) => ({ shopId, localId: r.localId, ...buildFields(r) })),
+      data: toCreate.map((r) => ({
+        shopId,
+        localId: r.localId,
+        ...buildFields(r),
+        ...(buildCreateOnlyFields ? buildCreateOnlyFields(r) : {}),
+      })),
     });
   }
   for (const r of records) {
@@ -155,9 +172,15 @@ async function syncData(
     paymentTransactions = [],
   }
 ) {
+  // Resolved once per sync call, not per record — this transaction already
+  // has a documented history of timeout problems under real invoice-history
+  // load (see the timeout comment below), so this must never become O(n).
+  const attributedUserId = await resolveOwnerUserId(shopId);
+  const createAttribution = () => attribution(attributedUserId);
+
   return prisma.$transaction(async (tx) => {
-    await upsertBatch(tx, 'syncedItem', shopId, items, itemFields);
-    await upsertBatch(tx, 'syncedCustomer', shopId, customers, customerFields);
+    await upsertBatch(tx, 'syncedItem', shopId, items, itemFields, createAttribution);
+    await upsertBatch(tx, 'syncedCustomer', shopId, customers, customerFields, createAttribution);
 
     // Invoices themselves are batched the same way as items/customers
     // above. Items are immutable once created — simplest correct approach is
@@ -167,7 +190,7 @@ async function syncData(
     // sequential round-trips inside one interactive transaction to blow past
     // Prisma's timeout and get the transaction killed mid-sync (surfaced to
     // the client as a bare HTTP 500).
-    await upsertBatch(tx, 'syncedInvoice', shopId, invoices, invoiceFields);
+    await upsertBatch(tx, 'syncedInvoice', shopId, invoices, invoiceFields, createAttribution);
     const syncedInvoiceRows = invoices.length
       ? await tx.syncedInvoice.findMany({
           where: { shopId, localId: { in: invoices.map((inv) => inv.localId) } },
@@ -208,9 +231,17 @@ async function syncData(
       'syncedInventoryTransaction',
       shopId,
       inventoryTransactions,
-      inventoryTransactionFields
+      inventoryTransactionFields,
+      createAttribution
     );
-    await upsertBatch(tx, 'syncedPaymentTransaction', shopId, paymentTransactions, paymentTransactionFields);
+    await upsertBatch(
+      tx,
+      'syncedPaymentTransaction',
+      shopId,
+      paymentTransactions,
+      paymentTransactionFields,
+      createAttribution
+    );
 
     const syncedAt = new Date();
 
