@@ -2,8 +2,10 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const swaggerUi = require('swagger-ui-express');
 
 const env = require('./config/env');
+const openapiSpec = require('./docs/openapi');
 const prisma = require('./config/prisma');
 const { globalLimiter, createAuthLimiter } = require('./middleware/rateLimit.middleware');
 
@@ -60,6 +62,20 @@ app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '15mb' }));
 app.use(morgan('dev'));
 app.use('/api', globalLimiter);
+
+// Docs-only route, no shop/admin data ever flows through it — the global
+// helmet() above sets a strict CSP that blocks Swagger UI's own inline
+// bootstrap script, so it's removed for just this one path rather than
+// weakening CSP for the whole app.
+app.use(
+  '/api-docs',
+  (req, res, next) => {
+    res.removeHeader('Content-Security-Policy');
+    next();
+  },
+  swaggerUi.serve,
+  swaggerUi.setup(openapiSpec)
+);
 
 // Used by the app to poll "is it safe to retry yet" after a cold-start 5xx —
 // deliberately checks the database too (not just that Express is up), since
