@@ -35,14 +35,31 @@ async function listMembers(shopId) {
   }));
 }
 
-async function inviteMember({ shopId, actorUserId, actorShopUserId, actorRole, phone, role }) {
+// adminInitiated (platform admin panel, not a shop member) and auditMeta
+// (merged into this call's own audit row — never a second one) are the only
+// two things distinguishing an admin-panel invite from a normal in-app one;
+// see shop-members-admin.service.js for the admin-side caller.
+async function inviteMember({
+  shopId,
+  actorUserId = null,
+  actorShopUserId = null,
+  actorRole = null,
+  phone,
+  role,
+  adminInitiated = false,
+  auditMeta = {},
+}) {
   if (!PHONE_REGEX.test(phone)) {
     throw new AppError('Enter a valid 10-digit Indian mobile number', 400);
   }
   if (!VALID_ROLES.includes(role)) {
     throw new AppError('Invalid role', 400);
   }
-  if (role === 'OWNER') {
+  // A platform admin already has full authority over every shop — the
+  // "only an owner can invite another owner" rule exists to stop a
+  // MANAGER/CASHIER from escalating themselves via invite, which doesn't
+  // apply to an admin acting outside the shop's own permission model.
+  if (role === 'OWNER' && !adminInitiated) {
     const actorOverrides = await overridesFor(actorShopUserId);
     if (!hasPermission(actorRole, actorOverrides, 'member.permission.manage')) {
       throw new AppError('Only an owner can invite another owner', 403);
@@ -73,12 +90,12 @@ async function inviteMember({ shopId, actorUserId, actorShopUserId, actorRole, p
     module: 'member',
     entityType: 'Invitation',
     entityId: invitation.id,
-    metadata: { invitedPhone: phone, role },
+    metadata: { invitedPhone: phone, role, ...auditMeta },
   });
   return invitation;
 }
 
-async function revokeInvitation({ shopId, actorUserId, invitationId }) {
+async function revokeInvitation({ shopId, actorUserId = null, invitationId, auditMeta = {} }) {
   const invitation = await prisma.invitation.findFirst({ where: { id: invitationId, shopId } });
   if (!invitation || invitation.status !== 'PENDING') {
     throw new AppError('Invitation not found', 404);
@@ -91,6 +108,7 @@ async function revokeInvitation({ shopId, actorUserId, invitationId }) {
     module: 'member',
     entityType: 'Invitation',
     entityId: invitationId,
+    metadata: Object.keys(auditMeta).length ? auditMeta : null,
   });
 }
 
@@ -191,7 +209,16 @@ async function rejectInvitation({ invitationId, phone }) {
   await prisma.invitation.update({ where: { id: invitationId }, data: { status: 'REJECTED' } });
 }
 
-async function changeRole({ shopId, actorShopUserId, actorRole, actorUserId, targetShopUserId, newRole }) {
+async function changeRole({
+  shopId,
+  actorShopUserId = null,
+  actorRole = null,
+  actorUserId = null,
+  targetShopUserId,
+  newRole,
+  adminInitiated = false,
+  auditMeta = {},
+}) {
   if (!VALID_ROLES.includes(newRole)) {
     throw new AppError('Invalid role', 400);
   }
@@ -200,14 +227,24 @@ async function changeRole({ shopId, actorShopUserId, actorRole, actorUserId, tar
   if (!target) {
     throw new AppError('Member not found', 404);
   }
-  const actorOverrides = await overridesFor(actorShopUserId);
 
-  assertCanChangeRole(
-    { shopUserId: actorShopUserId, role: actorRole, overrides: actorOverrides },
-    { shopUserId: target.id, role: target.role },
-    newRole,
-    memberships.map((m) => ({ shopUserId: m.id, role: m.role }))
-  );
+  if (adminInitiated) {
+    // Same data-integrity invariant as the in-app path (never leave a shop
+    // without any owner) — just without the actor-permission half, which
+    // doesn't apply to a platform admin acting outside the shop's own
+    // permission model.
+    if (target.role === 'OWNER' && newRole !== 'OWNER') {
+      assertNotRemovingLastOwner(memberships.map((m) => ({ shopUserId: m.id, role: m.role })), target.id);
+    }
+  } else {
+    const actorOverrides = await overridesFor(actorShopUserId);
+    assertCanChangeRole(
+      { shopUserId: actorShopUserId, role: actorRole, overrides: actorOverrides },
+      { shopUserId: target.id, role: target.role },
+      newRole,
+      memberships.map((m) => ({ shopUserId: m.id, role: m.role }))
+    );
+  }
 
   const updated = await prisma.shopUser.update({ where: { id: targetShopUserId }, data: { role: newRole } });
   await auditLog.record({
@@ -217,12 +254,12 @@ async function changeRole({ shopId, actorShopUserId, actorRole, actorUserId, tar
     module: 'member',
     entityType: 'ShopUser',
     entityId: targetShopUserId,
-    metadata: { from: target.role, to: newRole },
+    metadata: { from: target.role, to: newRole, ...auditMeta },
   });
   return updated;
 }
 
-async function _softRemove({ shopId, actorUserId, targetShopUserId, selfInitiated }) {
+async function _softRemove({ shopId, actorUserId = null, targetShopUserId, selfInitiated, auditMeta = {} }) {
   const memberships = await activeMembershipsForShop(shopId);
   const target = memberships.find((m) => m.id === targetShopUserId);
   if (!target) {
@@ -241,12 +278,12 @@ async function _softRemove({ shopId, actorUserId, targetShopUserId, selfInitiate
     module: 'member',
     entityType: 'ShopUser',
     entityId: targetShopUserId,
-    metadata: { selfInitiated: !!selfInitiated },
+    metadata: { selfInitiated: !!selfInitiated, ...auditMeta },
   });
 }
 
-async function removeMember({ shopId, actorUserId, targetShopUserId }) {
-  return _softRemove({ shopId, actorUserId, targetShopUserId, selfInitiated: false });
+async function removeMember({ shopId, actorUserId = null, targetShopUserId, auditMeta = {} }) {
+  return _softRemove({ shopId, actorUserId, targetShopUserId, selfInitiated: false, auditMeta });
 }
 
 async function leaveShop({ shopId, actorUserId, actorShopUserId }) {

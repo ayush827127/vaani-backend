@@ -34,6 +34,8 @@ const shopPaymentsRoutes = require('./modules/shop-payments/shop-payments.routes
 const shopSubscriptionRoutes = require('./modules/shop-subscription/shop-subscription.routes');
 const adminPaymentClaimsRoutes = require('./modules/admin-payment-claims/admin-payment-claims.routes');
 const adminDashboardRoutes = require('./modules/admin-dashboard/admin-dashboard.routes');
+const shopMembersAdminRoutes = require('./modules/shop-members-admin/shop-members-admin.routes');
+const adminAuditLogRoutes = require('./modules/admin-audit-log/admin-audit-log.routes');
 
 const notFoundMiddleware = require('./middleware/notFound.middleware');
 const errorMiddleware = require('./middleware/error.middleware');
@@ -99,6 +101,8 @@ app.use('/api/admin/shops/:shopId/items', shopItemsRoutes);
 app.use('/api/admin/shops/:shopId/customers', shopCustomersRoutes);
 app.use('/api/admin/shops/:shopId/invoices', shopInvoicesRoutes);
 app.use('/api/admin/shops/:shopId/payments', shopPaymentsRoutes);
+app.use('/api/admin/shops/:shopId/members', shopMembersAdminRoutes);
+app.use('/api/admin/shops/:shopId/audit-log', adminAuditLogRoutes);
 app.use('/api/admin/plans', plansRoutes);
 app.use('/api/admin/modules', modulesRoutes);
 app.use('/api/admin', subscriptionsRoutes);

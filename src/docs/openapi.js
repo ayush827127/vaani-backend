@@ -99,7 +99,9 @@ module.exports = {
     { name: 'Admin: Shop Customers', description: 'Needs an Admin token. Mounted per-shop.' },
     { name: 'Admin: Shop Invoices', description: 'Needs an Admin token. Mounted per-shop.' },
     { name: 'Admin: Shop Payments', description: 'Needs an Admin token. Mounted per-shop.' },
-    { name: 'Admin: Shop Users', description: 'Needs an Admin token. Mounted per-shop.' },
+    { name: 'Admin: Shop Members', description: 'Needs an Admin token. The new User/ShopUser/Invitation system — invite, change role, remove, list pending invitations. Distinct from the legacy "Admin: Shop Users" group below.' },
+    { name: 'Admin: Audit Log', description: 'Needs an Admin token. Read-only history of sync CRUD, conflict detections, and permission rejections for a shop.' },
+    { name: 'Admin: Shop Users', description: 'Needs an Admin token. Mounted per-shop. Legacy admin-managed ShopUser rows — predates the User/Invitation-based member system above.' },
     { name: 'Admin: Plans', description: 'Needs an Admin token.' },
     { name: 'Admin: Modules', description: 'Needs an Admin token.' },
     { name: 'Admin: Subscriptions', description: 'Needs an Admin token.' },
@@ -454,6 +456,56 @@ module.exports = {
       get: op({ summary: 'Get a payment transaction', tag: 'Admin: Shop Payments', params: [idParam('shopId', 'Shop id'), idParam('id', 'Payment id')] }),
       patch: op({ summary: 'Update a payment transaction (all fields optional)', tag: 'Admin: Shop Payments', params: [idParam('shopId', 'Shop id'), idParam('id', 'Payment id')] }),
       delete: op({ summary: 'Delete (soft) a payment transaction', tag: 'Admin: Shop Payments', params: [idParam('shopId', 'Shop id'), idParam('id', 'Payment id')] }),
+    },
+
+    '/api/admin/shops/{shopId}/members': {
+      get: op({ summary: "List a shop's active members (the new User/ShopUser system)", tag: 'Admin: Shop Members', params: [idParam('shopId', 'Shop id')] }),
+    },
+    '/api/admin/shops/{shopId}/members/invite': {
+      post: op({
+        summary: 'Invite a phone number to join the shop with a role — bypasses the "only an owner can invite an owner" in-app rule, since an admin already has full authority',
+        tag: 'Admin: Shop Members',
+        params: [idParam('shopId', 'Shop id')],
+        body: { type: 'object', required: ['phone', 'role'], properties: { phone: { type: 'string' }, role: roleEnum } },
+      }),
+    },
+    '/api/admin/shops/{shopId}/members/{shopUserId}/role': {
+      patch: op({
+        summary: "Change a member's role — still blocked from demoting a shop's sole remaining owner",
+        tag: 'Admin: Shop Members',
+        params: [idParam('shopId', 'Shop id'), idParam('shopUserId', 'ShopUser id')],
+        body: { type: 'object', required: ['role'], properties: { role: roleEnum } },
+      }),
+    },
+    '/api/admin/shops/{shopId}/members/{shopUserId}': {
+      delete: op({ summary: "Remove a member — still blocked from removing a shop's sole remaining owner", tag: 'Admin: Shop Members', params: [idParam('shopId', 'Shop id'), idParam('shopUserId', 'ShopUser id')] }),
+    },
+    '/api/admin/shops/{shopId}/members/invitations': {
+      get: op({ summary: "List a shop's pending invitations", tag: 'Admin: Shop Members', params: [idParam('shopId', 'Shop id')] }),
+    },
+    '/api/admin/shops/{shopId}/members/invitations/{id}/revoke': {
+      post: op({ summary: 'Revoke a pending invitation', tag: 'Admin: Shop Members', params: [idParam('shopId', 'Shop id'), idParam('id', 'Invitation id')] }),
+    },
+
+    '/api/admin/shops/{shopId}/audit-log': {
+      get: op({
+        summary: "A shop's audit history — sync CRUD, inventory/financial/invoice-number conflict detections, and permission-rejection events, newest first",
+        tag: 'Admin: Audit Log',
+        params: [idParam('shopId', 'Shop id')],
+        query: [
+          { name: 'page', in: 'query', required: false, schema: { type: 'integer', minimum: 1, default: 1 } },
+          { name: 'limit', in: 'query', required: false, schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 } },
+        ],
+        responseSchema: {
+          type: 'object',
+          properties: {
+            entries: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, action: { type: 'string' }, module: { type: 'string', nullable: true }, entityType: { type: 'string', nullable: true }, entityId: { type: 'string', nullable: true }, userId: { type: 'string', nullable: true }, metadata: { type: 'object', nullable: true }, createdAt: { type: 'string', format: 'date-time' } } } },
+            total: { type: 'integer' },
+            page: { type: 'integer' },
+            limit: { type: 'integer' },
+          },
+        },
+      }),
     },
 
     '/api/admin/shops/{shopId}/users': {

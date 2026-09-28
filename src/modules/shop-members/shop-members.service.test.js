@@ -65,6 +65,29 @@ describe('inviteMember', () => {
       expect.objectContaining({ userId: 'user-owner', action: 'MEMBER_INVITED' })
     );
   });
+
+  test('adminInitiated skips the owner-invite-permission check entirely (no actor at all)', async () => {
+    mockPrisma.shopUser.findFirst.mockResolvedValue(null);
+    mockPrisma.invitation.findFirst.mockResolvedValue(null);
+    mockPrisma.invitation.create.mockResolvedValue({ id: 'inv-1' });
+
+    await service.inviteMember({
+      shopId: 'shop-1',
+      phone: '9876543210',
+      role: 'OWNER',
+      adminInitiated: true,
+      auditMeta: { actorType: 'ADMIN', adminId: 'admin-1' },
+    });
+
+    expect(mockPrisma.shopUserPermission.findMany).not.toHaveBeenCalled();
+    expect(mockRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: null,
+        action: 'MEMBER_INVITED',
+        metadata: expect.objectContaining({ actorType: 'ADMIN', adminId: 'admin-1' }),
+      })
+    );
+  });
 });
 
 describe('acceptInvitation', () => {
@@ -202,6 +225,40 @@ describe('changeRole', () => {
       })
     ).rejects.toMatchObject({ status: 400 });
   });
+
+  test('adminInitiated skips the actor-permission check but still blocks demoting the sole owner', async () => {
+    mockPrisma.shopUser.findMany.mockResolvedValue(memberships);
+
+    await expect(
+      service.changeRole({
+        shopId: 'shop-1',
+        targetShopUserId: 'su-owner',
+        newRole: 'MANAGER',
+        adminInitiated: true,
+      })
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  test('adminInitiated succeeds for a non-owner target with no actor at all, and audits with null userId', async () => {
+    mockPrisma.shopUser.findMany.mockResolvedValue(memberships);
+    mockPrisma.shopUser.update.mockResolvedValue({ id: 'su-cashier', role: 'MANAGER' });
+
+    await service.changeRole({
+      shopId: 'shop-1',
+      targetShopUserId: 'su-cashier',
+      newRole: 'MANAGER',
+      adminInitiated: true,
+      auditMeta: { actorType: 'ADMIN', adminId: 'admin-1' },
+    });
+
+    expect(mockRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: null,
+        action: 'ROLE_CHANGED',
+        metadata: expect.objectContaining({ actorType: 'ADMIN', adminId: 'admin-1' }),
+      })
+    );
+  });
 });
 
 describe('removeMember / leaveShop', () => {
@@ -227,6 +284,24 @@ describe('removeMember / leaveShop', () => {
       expect.objectContaining({ data: expect.objectContaining({ status: 'REMOVED' }) })
     );
     expect(mockRecord).toHaveBeenCalledWith(expect.objectContaining({ action: 'MEMBER_REMOVED' }));
+  });
+
+  test('admin removal (no actorUserId) audits with null userId and the admin auditMeta', async () => {
+    mockPrisma.shopUser.findMany.mockResolvedValue(memberships);
+
+    await service.removeMember({
+      shopId: 'shop-1',
+      targetShopUserId: 'su-cashier',
+      auditMeta: { actorType: 'ADMIN', adminId: 'admin-1' },
+    });
+
+    expect(mockRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: null,
+        action: 'MEMBER_REMOVED',
+        metadata: expect.objectContaining({ actorType: 'ADMIN', adminId: 'admin-1', selfInitiated: false }),
+      })
+    );
   });
 
   test('a sole owner leaving the shop is blocked', async () => {
