@@ -12,6 +12,7 @@ const createSchema = z.object({
   category: z.string().nullable().optional(),
   costPrice: z.number(),
   sellingPrice: z.number(),
+  mrp: z.number().nullable().optional(),
   gstRate: z.number(),
   stockQuantity: z.number().int(),
   reorderLevel: z.number().int(),

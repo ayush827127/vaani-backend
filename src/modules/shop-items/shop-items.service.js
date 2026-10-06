@@ -44,6 +44,7 @@ async function create(shopId, data) {
         category: data.category ?? null,
         costPrice: data.costPrice,
         sellingPrice: data.sellingPrice,
+        mrp: data.mrp ?? null,
         gstRate: data.gstRate,
         stockQuantity: data.stockQuantity,
         reorderLevel: data.reorderLevel,

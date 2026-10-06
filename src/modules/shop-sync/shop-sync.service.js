@@ -28,6 +28,10 @@ function itemFields(p) {
     category: p.category ?? null,
     costPrice: p.costPrice,
     sellingPrice: p.sellingPrice,
+    // Unlike imagePath/imageUrl below, this is a plain user-entered field
+    // the phone is always authoritative for (including "not set"), so it's
+    // sent and overwritten unconditionally, same as costPrice/sellingPrice.
+    mrp: p.mrp ?? null,
     gstRate: p.gstRate,
     stockQuantity: p.stockQuantity,
     reorderLevel: p.reorderLevel,
@@ -724,6 +728,7 @@ function itemOut(p) {
     category: p.category,
     costPrice: p.costPrice,
     sellingPrice: p.sellingPrice,
+    mrp: p.mrp,
     gstRate: p.gstRate,
     stockQuantity: p.stockQuantity,
     reorderLevel: p.reorderLevel,

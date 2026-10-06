@@ -12,6 +12,11 @@ const itemSchema = z.object({
   category: z.string().nullable().optional(),
   costPrice: z.number(),
   sellingPrice: z.number(),
+  // Zod strips any undeclared field by default — the exact bug that once
+  // silently defeated the item-images sync fix. Must be declared here or
+  // this travels nowhere despite the model/Flutter side being wired up
+  // correctly.
+  mrp: z.number().nullable().optional(),
   gstRate: z.number(),
   stockQuantity: z.number().int(),
   reorderLevel: z.number().int(),

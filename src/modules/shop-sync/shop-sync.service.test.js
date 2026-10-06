@@ -95,6 +95,43 @@ test('an explicit attributed user id (User-token path) is used verbatim, and res
   });
 });
 
+describe('mrp', () => {
+  test('a numeric mrp on a new item is written through to createMany', async () => {
+    await syncData('shop-1', { items: [{ ...baseItem, mrp: 25 }] });
+
+    expect(mockTx.syncedItem.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ mrp: 25 })],
+    });
+  });
+
+  test('an item pushed with no mrp at all stores null, never undefined (so it reaches the DB column)', async () => {
+    await syncData('shop-1', { items: [baseItem] }); // baseItem has no mrp key
+
+    const created = mockTx.syncedItem.createMany.mock.calls[0][0].data[0];
+    expect(created.mrp).toBeNull();
+  });
+
+  test('updating an existing item with a new mrp overwrites it (not treated like the image-field "never overwrite" cases)', async () => {
+    mockTx.syncedItem.findMany.mockResolvedValue([{ localId: 1 }]); // already exists
+
+    await syncData('shop-1', { items: [{ ...baseItem, mrp: 30 }] });
+
+    expect(mockTx.syncedItem.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ mrp: 30 }) })
+    );
+  });
+
+  test('updating an existing item with mrp explicitly cleared (null) actually clears it, not skipped', async () => {
+    mockTx.syncedItem.findMany.mockResolvedValue([{ localId: 1 }]);
+
+    await syncData('shop-1', { items: [{ ...baseItem, mrp: null }] });
+
+    expect(mockTx.syncedItem.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ mrp: null }) })
+    );
+  });
+});
+
 describe('inventory conflict detection', () => {
   const baseTx = {
     localId: 1,

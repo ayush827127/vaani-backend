@@ -301,6 +301,11 @@ model SyncedItem {
   category         String?
   costPrice        Float
   sellingPrice     Float
+  // Printed maximum retail price — independent of sellingPrice (what the
+  // shop actually charges, which can run below MRP). Nullable: no existing
+  // item has ever recorded one, and there's no real value to invent for a
+  // row created before this field existed.
+  mrp              Float?
   gstRate          Float
   stockQuantity    Int
   reorderLevel     Int
