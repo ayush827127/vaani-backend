@@ -190,6 +190,12 @@ module.exports = {
     '/api/shop/members': {
       get: op({ summary: 'List members of the active shop', tag: 'Shop Members' }),
     },
+    '/api/shop/members/quota': {
+      get: op({
+        summary: "Server-computed staff usage against the active shop's plan cap (Basic = 0 additional staff)",
+        tag: 'Shop Members',
+      }),
+    },
     '/api/shop/members/invite': {
       post: op({
         summary: 'Invite a phone number to join the active shop with a role',

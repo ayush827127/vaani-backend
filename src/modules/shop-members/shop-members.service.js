@@ -3,6 +3,8 @@ const AppError = require('../../utils/AppError');
 const auditLog = require('../../services/auditLog.service');
 const { hasPermission } = require('../../services/permissions');
 const { assertNotRemovingLastOwner, assertCanChangeRole } = require('../../services/ownerProtection');
+const { getEffectivePlan } = require('../shop-status/shop-status.service');
+const { BASIC_STAFF_LIMIT, countStaffUsage } = require('../../utils/staffQuota');
 
 // Same pattern shop-otp.service.js already validates phones with.
 const PHONE_REGEX = /^[6-9]\d{9}$/;
@@ -11,6 +13,36 @@ const VALID_ROLES = ['OWNER', 'MANAGER', 'CASHIER'];
 
 async function activeMembershipsForShop(shopId) {
   return prisma.shopUser.findMany({ where: { shopId, status: 'ACTIVE' } });
+}
+
+// Server-computed staff usage — mirrors shop-subscription.service.js's
+// getVoiceUsage for the same reason: the app shows this rather than
+// trusting its own count of whatever it happens to have fetched, since
+// pending invitations in particular are easy to miss client-side.
+async function getStaffQuota(shopId) {
+  const { effectivePlan } = await getEffectivePlan(shopId);
+  const isBasic = effectivePlan?.name === 'Basic';
+  const used = await countStaffUsage(shopId);
+  return { used, limit: isBasic ? BASIC_STAFF_LIMIT : null, unlimited: !isBasic };
+}
+
+// Refuses a new invite once a Basic-plan shop has reached its staff cap —
+// checked here (inside inviteMember itself, not the controller) so it
+// applies uniformly whether the invite came from the in-app flow or the
+// admin panel's adminInitiated path. Applies regardless of which role is
+// being invited (MANAGER/CASHIER/OWNER) — Basic's cap is on total
+// additional staff, not any one role.
+async function checkStaffQuota(shopId) {
+  const { effectivePlan } = await getEffectivePlan(shopId);
+  if (!effectivePlan || effectivePlan.name !== 'Basic') return; // unlimited on Pro/Advanced
+
+  const used = await countStaffUsage(shopId);
+  if (used >= BASIC_STAFF_LIMIT) {
+    throw new AppError(
+      'Basic plan does not include additional staff members. Upgrade to Pro to invite your team.',
+      403
+    );
+  }
 }
 
 async function overridesFor(shopUserId) {
@@ -76,6 +108,8 @@ async function inviteMember({
   if (existingInvite) {
     throw new AppError('An invitation is already pending for this phone number', 409);
   }
+
+  await checkStaffQuota(shopId);
 
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + INVITATION_TTL_DAYS);
@@ -316,6 +350,8 @@ async function setPermission({ shopId, actorUserId, targetShopUserId, permission
 
 module.exports = {
   listMembers,
+  getStaffQuota,
+  checkStaffQuota,
   inviteMember,
   revokeInvitation,
   listMyInvitations,

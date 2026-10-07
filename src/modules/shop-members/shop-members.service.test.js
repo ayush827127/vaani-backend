@@ -1,8 +1,9 @@
 const mockPrisma = {
-  shopUser: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn(), create: jest.fn() },
-  invitation: { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+  shopUser: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn(), create: jest.fn(), count: jest.fn() },
+  invitation: { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn() },
   user: { findUnique: jest.fn() },
   shop: { findUnique: jest.fn() },
+  plan: { findFirst: jest.fn() },
   shopUserPermission: { findMany: jest.fn(), upsert: jest.fn() },
 };
 jest.mock('../../config/prisma', () => mockPrisma);
@@ -15,7 +16,22 @@ const service = require('./shop-members.service');
 beforeEach(() => {
   jest.clearAllMocks();
   mockPrisma.shopUserPermission.findMany.mockResolvedValue([]); // no overrides, by default
-  mockPrisma.shop.findUnique.mockResolvedValue({ name: 'ABC Store', ownerName: 'Ramesh' });
+  // getEffectivePlan's own shop lookup (shared by checkStaffQuota/
+  // getStaffQuota, called on every inviteMember whether or not a given test
+  // cares about the plan) — defaults to an in-force Pro subscription so the
+  // pre-existing inviteMember/changeRole/removeMember tests below, which
+  // predate the staff cap and aren't about it, keep their original
+  // unlimited-staff behavior. The staff-quota describe block below
+  // overrides this per test to simulate Basic instead.
+  mockPrisma.shop.findUnique.mockResolvedValue({
+    name: 'ABC Store',
+    ownerName: 'Ramesh',
+    status: 'ACTIVE',
+    subscriptions: [{ status: 'ACTIVE', endDate: null, plan: { name: 'Pro', modules: [] } }],
+    moduleOverrides: [],
+  });
+  mockPrisma.shopUser.count.mockResolvedValue(0);
+  mockPrisma.invitation.count.mockResolvedValue(0);
 });
 
 describe('inviteMember', () => {
@@ -87,6 +103,80 @@ describe('inviteMember', () => {
         metadata: expect.objectContaining({ actorType: 'ADMIN', adminId: 'admin-1' }),
       })
     );
+  });
+});
+
+describe('staff quota', () => {
+  const baseArgs = {
+    shopId: 'shop-1',
+    actorUserId: 'user-owner',
+    actorShopUserId: 'su-owner',
+    actorRole: 'OWNER',
+    phone: '9876543210',
+    role: 'CASHIER',
+  };
+
+  function mockBasicPlan() {
+    mockPrisma.shop.findUnique.mockResolvedValue({
+      name: 'ABC Store',
+      ownerName: 'Ramesh',
+      status: 'ACTIVE',
+      subscriptions: [], // no paid subscription in force -> falls back to Basic
+      moduleOverrides: [],
+    });
+    mockPrisma.plan.findFirst.mockResolvedValue({ name: 'Basic', modules: [] });
+  }
+
+  test('a Basic-plan shop is blocked from inviting anyone at all', async () => {
+    mockBasicPlan();
+    mockPrisma.shopUser.findFirst.mockResolvedValue(null);
+    mockPrisma.invitation.findFirst.mockResolvedValue(null);
+
+    await expect(service.inviteMember(baseArgs)).rejects.toMatchObject({ status: 403 });
+    expect(mockPrisma.invitation.create).not.toHaveBeenCalled();
+  });
+
+  test('a Pro-plan shop is never blocked, regardless of existing staff count', async () => {
+    // Default beforeEach mock is already an in-force Pro subscription.
+    mockPrisma.shopUser.findFirst.mockResolvedValue(null);
+    mockPrisma.invitation.findFirst.mockResolvedValue(null);
+    mockPrisma.invitation.create.mockResolvedValue({ id: 'inv-1' });
+    mockPrisma.shopUser.count.mockResolvedValue(10);
+    mockPrisma.invitation.count.mockResolvedValue(10);
+
+    await expect(service.inviteMember(baseArgs)).resolves.toMatchObject({ id: 'inv-1' });
+  });
+
+  test('the cap counts pending invitations, not just already-active members', async () => {
+    mockBasicPlan();
+    mockPrisma.shopUser.findFirst.mockResolvedValue(null);
+    mockPrisma.invitation.findFirst.mockResolvedValue(null);
+    mockPrisma.shopUser.count.mockResolvedValue(0); // no active non-owner members
+    mockPrisma.invitation.count.mockResolvedValue(1); // but one invite already pending
+
+    await expect(service.inviteMember(baseArgs)).rejects.toMatchObject({ status: 403 });
+  });
+
+  test('an admin-initiated invite is bound by the same cap as an in-app one', async () => {
+    mockBasicPlan();
+    mockPrisma.shopUser.findFirst.mockResolvedValue(null);
+    mockPrisma.invitation.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.inviteMember({ shopId: 'shop-1', phone: '9876543210', role: 'CASHIER', adminInitiated: true })
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  test('getStaffQuota reports the Basic cap and current usage', async () => {
+    mockBasicPlan();
+    mockPrisma.shopUser.count.mockResolvedValue(0);
+    mockPrisma.invitation.count.mockResolvedValue(0);
+
+    await expect(service.getStaffQuota('shop-1')).resolves.toEqual({ used: 0, limit: 0, unlimited: false });
+  });
+
+  test('getStaffQuota reports unlimited for a Pro-plan shop', async () => {
+    await expect(service.getStaffQuota('shop-1')).resolves.toEqual({ used: 0, limit: null, unlimited: true });
   });
 });
 

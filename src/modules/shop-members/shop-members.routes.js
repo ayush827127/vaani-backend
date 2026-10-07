@@ -19,6 +19,7 @@ const membersRouter = Router();
 membersRouter.use(requireUser, requireActiveMembership);
 
 membersRouter.get('/', requirePermission('member.view'), controller.listMembers);
+membersRouter.get('/quota', requirePermission('member.invite'), controller.getStaffQuota);
 membersRouter.post('/invite', requirePermission('member.invite'), validate(inviteSchema), controller.invite);
 membersRouter.post('/invite/:id/revoke', requirePermission('member.invite'), controller.revokeInvite);
 membersRouter.post('/leave', controller.leave); // no extra permission — anyone can leave their own membership

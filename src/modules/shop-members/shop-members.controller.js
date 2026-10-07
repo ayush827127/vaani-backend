@@ -7,6 +7,11 @@ const listMembers = asyncHandler(async (req, res) => {
   return ok(res, members);
 });
 
+const getStaffQuota = asyncHandler(async (req, res) => {
+  const quota = await service.getStaffQuota(req.membership.shopId);
+  return ok(res, quota);
+});
+
 const invite = asyncHandler(async (req, res) => {
   const invitation = await service.inviteMember({
     shopId: req.membership.shopId,
@@ -90,6 +95,7 @@ const setPermission = asyncHandler(async (req, res) => {
 
 module.exports = {
   listMembers,
+  getStaffQuota,
   invite,
   revokeInvite,
   listMyInvitations,
