@@ -22,6 +22,11 @@ const itemSchema = z.object({
   reorderLevel: z.number().int(),
   imagePath: z.string().nullable().optional(),
   imageUrl: z.string().nullable().optional(),
+  // Zod strips any undeclared field by default — same "silently never
+  // syncs" trap mrp above already carries a note about. Must be declared
+  // here or this travels nowhere despite the model/Flutter side being wired
+  // up correctly.
+  description: z.string().nullable().optional(),
   itemType: z.enum(['PRODUCT', 'SERVICE']).optional(),
   inventoryEnabled: z.boolean().optional(),
   aliases: z.array(z.string()).optional(),

@@ -17,6 +17,7 @@ const createSchema = z.object({
   stockQuantity: z.number().int(),
   reorderLevel: z.number().int(),
   imagePath: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
   itemType: z.enum(['PRODUCT', 'SERVICE']).optional(),
   inventoryEnabled: z.boolean().optional(),
   isActive: z.boolean().optional(),

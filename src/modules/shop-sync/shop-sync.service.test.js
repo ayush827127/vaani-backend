@@ -132,6 +132,43 @@ describe('mrp', () => {
   });
 });
 
+describe('description', () => {
+  test('a description on a new item is written through to createMany', async () => {
+    await syncData('shop-1', { items: [{ ...baseItem, description: '1kg pack, imported' }] });
+
+    expect(mockTx.syncedItem.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ description: '1kg pack, imported' })],
+    });
+  });
+
+  test('an item pushed with no description at all stores null, never undefined (so it reaches the DB column)', async () => {
+    await syncData('shop-1', { items: [baseItem] }); // baseItem has no description key
+
+    const created = mockTx.syncedItem.createMany.mock.calls[0][0].data[0];
+    expect(created.description).toBeNull();
+  });
+
+  test('updating an existing item with a new description overwrites it', async () => {
+    mockTx.syncedItem.findMany.mockResolvedValue([{ localId: 1 }]); // already exists
+
+    await syncData('shop-1', { items: [{ ...baseItem, description: 'updated text' }] });
+
+    expect(mockTx.syncedItem.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ description: 'updated text' }) })
+    );
+  });
+
+  test('updating an existing item with description explicitly cleared (null) actually clears it, not skipped', async () => {
+    mockTx.syncedItem.findMany.mockResolvedValue([{ localId: 1 }]);
+
+    await syncData('shop-1', { items: [{ ...baseItem, description: null }] });
+
+    expect(mockTx.syncedItem.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ description: null }) })
+    );
+  });
+});
+
 describe('inventory conflict detection', () => {
   const baseTx = {
     localId: 1,

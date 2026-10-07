@@ -311,6 +311,8 @@ model SyncedItem {
   reorderLevel     Int
   imagePath        String?
   imageUrl         String?
+  // Free-text item description — nullable, no existing item has one.
+  description      String?
   // 'PRODUCT' | 'SERVICE' — a service never carries stock; see
   // inventoryEnabled below for what billing actually gates on.
   itemType         String    @default("PRODUCT")

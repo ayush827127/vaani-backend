@@ -49,6 +49,7 @@ async function create(shopId, data) {
         stockQuantity: data.stockQuantity,
         reorderLevel: data.reorderLevel,
         imagePath: data.imagePath ?? null,
+        description: data.description ?? null,
         isActive: data.isActive ?? true,
         localCreatedAt: now,
         localUpdatedAt: now,

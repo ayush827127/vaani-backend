@@ -378,6 +378,7 @@ module.exports = {
             name: { type: 'string' }, sku: { type: 'string', nullable: true }, barcode: { type: 'string', nullable: true },
             category: { type: 'string', nullable: true }, costPrice: { type: 'number' }, sellingPrice: { type: 'number' },
             mrp: { type: 'number', nullable: true, description: 'Printed maximum retail price' },
+            description: { type: 'string', nullable: true },
             gstRate: { type: 'number' }, stockQuantity: { type: 'integer' }, reorderLevel: { type: 'integer' },
             itemType: { type: 'string', enum: ['PRODUCT', 'SERVICE'] }, inventoryEnabled: { type: 'boolean' }, isActive: { type: 'boolean' },
           },

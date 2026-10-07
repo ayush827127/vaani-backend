@@ -32,6 +32,9 @@ function itemFields(p) {
     // the phone is always authoritative for (including "not set"), so it's
     // sent and overwritten unconditionally, same as costPrice/sellingPrice.
     mrp: p.mrp ?? null,
+    // Same "phone is always authoritative, including not set" reasoning as
+    // mrp above.
+    description: p.description ?? null,
     gstRate: p.gstRate,
     stockQuantity: p.stockQuantity,
     reorderLevel: p.reorderLevel,
@@ -729,6 +732,7 @@ function itemOut(p) {
     costPrice: p.costPrice,
     sellingPrice: p.sellingPrice,
     mrp: p.mrp,
+    description: p.description,
     gstRate: p.gstRate,
     stockQuantity: p.stockQuantity,
     reorderLevel: p.reorderLevel,
