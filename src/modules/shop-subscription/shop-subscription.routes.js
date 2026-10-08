@@ -34,7 +34,7 @@ router.post(
   controller.createPaymentClaim
 );
 router.get('/payment-claims', requireShop, controller.listMyPaymentClaims);
-router.get('/subscription/voice-usage', requireShop, controller.getVoiceUsage);
-router.get('/subscription/manual-invoice-usage', requireShop, controller.getManualInvoiceUsage);
+router.get('/subscription/invoice-usage', requireShop, controller.getInvoiceUsage);
+router.post('/subscription/start-trial', requireShop, requireActiveShop, controller.startTrial);
 
 module.exports = router;

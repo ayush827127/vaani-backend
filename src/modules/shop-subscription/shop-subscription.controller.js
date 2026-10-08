@@ -1,6 +1,7 @@
 const asyncHandler = require('../../utils/asyncHandler');
 const { ok } = require('../../utils/apiResponse');
 const service = require('./shop-subscription.service');
+const trialService = require('./trial.service');
 
 const listPlans = asyncHandler(async (req, res) => {
   const plans = await service.listPlans();
@@ -22,14 +23,14 @@ const listMyPaymentClaims = asyncHandler(async (req, res) => {
   return ok(res, claims);
 });
 
-const getVoiceUsage = asyncHandler(async (req, res) => {
-  const usage = await service.getVoiceUsage(req.shop.id);
+const getInvoiceUsage = asyncHandler(async (req, res) => {
+  const usage = await service.getInvoiceUsage(req.shop.id);
   return ok(res, usage);
 });
 
-const getManualInvoiceUsage = asyncHandler(async (req, res) => {
-  const usage = await service.getManualInvoiceUsage(req.shop.id);
-  return ok(res, usage);
+const startTrial = asyncHandler(async (req, res) => {
+  const subscription = await trialService.startTrial(req.shop.id);
+  return ok(res, subscription, 201);
 });
 
 module.exports = {
@@ -37,6 +38,6 @@ module.exports = {
   switchToFreePlan,
   createPaymentClaim,
   listMyPaymentClaims,
-  getVoiceUsage,
-  getManualInvoiceUsage,
+  getInvoiceUsage,
+  startTrial,
 };

@@ -2,6 +2,8 @@ const prisma = require('../../config/prisma');
 const { resolveOwnerUserId } = require('../user-auth/user-auth.service');
 const auditLog = require('../../services/auditLog.service');
 const { resolveEffectivePermissions } = require('../../services/permissions');
+const { getEffectivePlan } = require('../shop-status/shop-status.service');
+const { countInvoicesThisMonth } = require('../../utils/invoiceQuota');
 
 // Applied only on create (see upsertBatch's buildCreateOnlyFields param) —
 // createdByUserId is creation-time attribution, never touched again by a
@@ -293,6 +295,53 @@ async function syncData(
     });
   }
 
+  // Combined (voice + manual) monthly invoice quota — the real
+  // server-side enforcement gap this closed: previously only voice
+  // invoices were checked (synchronously, before the Groq call); a
+  // manually-created invoice reached the server only through this batch
+  // push with no check at all. Resolved once per sync call (same timing
+  // as attributedUserId/effectivePermissions above), never per record —
+  // this transaction already has a documented history of timeout problems
+  // under real invoice-history load.
+  //
+  // admittedSoFar/quotaRejectedLocalIds are populated as a side effect of
+  // canApplyInvoiceQuota running inside upsertBatch below — read again
+  // once the transaction's invoice processing has run, to build the
+  // response and audit rows.
+  let canApplyInvoiceQuota;
+  let invoiceQuotaLimit = null;
+  let invoiceQuotaAlreadyUsed = 0;
+  let invoiceQuotaAdmitted = 0;
+  const quotaRejectedLocalIds = [];
+  if (invoices.length) {
+    const { effectivePlan } = await getEffectivePlan(shopId);
+    invoiceQuotaLimit = effectivePlan?.invoiceMonthlyLimit ?? null;
+    if (invoiceQuotaLimit != null) {
+      invoiceQuotaAlreadyUsed = await countInvoicesThisMonth(shopId);
+      canApplyInvoiceQuota = (record, isCreate) => {
+        // Editing/paying off an already-synced invoice never counts
+        // against the cap — only a genuinely new invoice does.
+        if (!isCreate) return true;
+        if (invoiceQuotaAlreadyUsed + invoiceQuotaAdmitted < invoiceQuotaLimit) {
+          invoiceQuotaAdmitted += 1;
+          return true;
+        }
+        quotaRejectedLocalIds.push(record.localId);
+        return false;
+      };
+    }
+  }
+  // ANDed with the permission predicate (if any) — short-circuit order
+  // matters: canApplyInvoice runs first, so a record already rejected for
+  // permission never also consumes quota via canApplyInvoiceQuota's side
+  // effect.
+  const canApplyInvoiceFinal =
+    canApplyInvoice || canApplyInvoiceQuota
+      ? (record, isCreate) =>
+          (!canApplyInvoice || canApplyInvoice(record, isCreate)) &&
+          (!canApplyInvoiceQuota || canApplyInvoiceQuota(record, isCreate))
+      : undefined;
+
   const inventoryConflicts = [];
   const financialConflicts = [];
   const invoiceNumberConflicts = [];
@@ -449,7 +498,7 @@ async function syncData(
         invoiceFields,
         buildCreateFields,
         buildUpdateFields,
-        canApplyInvoice
+        canApplyInvoiceFinal
       );
       const appliedInvoices = [...invoicesOutcome.created, ...invoicesOutcome.updated];
       const syncedInvoiceRows = appliedInvoices.length
@@ -508,9 +557,17 @@ async function syncData(
         canApplyPayment
       );
 
-      for (const outcome of [itemsOutcome, customersOutcome, invoicesOutcome, inventoryTxOutcome, paymentsOutcome]) {
+      // invoicesOutcome.skipped mixes permission- and quota-rejected
+      // records together (canApplyInvoiceFinal ANDs both checks) — exclude
+      // anything already accounted for in quotaRejectedLocalIds so it's
+      // reported/audited once, under the right reason, not twice.
+      const quotaRejectedSet = new Set(quotaRejectedLocalIds);
+      for (const outcome of [itemsOutcome, customersOutcome, inventoryTxOutcome, paymentsOutcome]) {
         rejectedForPermission.push(...outcome.skipped);
       }
+      rejectedForPermission.push(
+        ...invoicesOutcome.skipped.filter(({ record }) => !quotaRejectedSet.has(record.localId))
+      );
 
       const syncedAt = new Date();
 
@@ -554,6 +611,20 @@ async function syncData(
           paymentTransactions: paymentsOutcome.created.length + paymentsOutcome.updated.length,
         },
         rejected: rejectedForPermission.length,
+        // Present only when the shop's plan actually has a cap — a shop on
+        // an unlimited plan (or a push with no invoices at all) gets null,
+        // not a zeroed-out object that would misleadingly suggest a cap
+        // exists. "remaining" is after this batch's own admissions, so the
+        // app can tell the shop how much headroom is left right now.
+        invoiceQuota:
+          invoiceQuotaLimit != null
+            ? {
+                rejected: quotaRejectedLocalIds.length,
+                limit: invoiceQuotaLimit,
+                used: invoiceQuotaAlreadyUsed + invoiceQuotaAdmitted,
+                remaining: Math.max(0, invoiceQuotaLimit - invoiceQuotaAlreadyUsed - invoiceQuotaAdmitted),
+              }
+            : null,
         syncedAt,
         // Internal handoff to the audit-emission code below, after the
         // transaction commits — deleted before this ever reaches the caller,
@@ -615,6 +686,15 @@ async function syncData(
       action: 'SYNC_RECORD_REJECTED_INSUFFICIENT_PERMISSION',
       module: 'sync',
       metadata: { localId: record.localId, isCreate },
+    });
+  }
+  for (const localId of quotaRejectedLocalIds) {
+    await auditLog.record({
+      shopId,
+      userId: attributedUserId,
+      action: 'SYNC_RECORD_REJECTED_MONTHLY_INVOICE_LIMIT',
+      module: 'sync',
+      metadata: { localId, limit: invoiceQuotaLimit },
     });
   }
 

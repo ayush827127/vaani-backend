@@ -87,6 +87,14 @@ model Shop {
   categories     String[]   @default([])
   logoUrl        String?
   status         ShopStatus @default(TRIAL)
+  // Whether this shop has ever started its one-time 14-day Pro trial —
+  // checked by trial.service.js's canStartTrial/startTrial before granting
+  // another. Deliberately a standalone flag rather than inferred from
+  // Subscription history alone: it must stay true forever even though the
+  // TRIAL-status Subscription row that caused it is just one row among
+  // possibly many later ones (an upgrade to paid Pro, a downgrade back to
+  // Basic, etc.) — nothing else here is a reliable "ever had a trial" signal.
+  trialUsed      Boolean    @default(false)
   lastDataSyncAt DateTime?
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
@@ -142,15 +150,21 @@ model Plan {
   billingCycle BillingCycle @default(MONTHLY)
   isActive     Boolean      @default(true)
   // Resource caps for this plan — null means unlimited. Read by
-  // voiceQuota/staffQuota/manualInvoiceQuota's enforcement (and the
-  // matching usage-display endpoints) via getEffectivePlan(), never
-  // hardcoded by plan name — keeps every cap admin-configurable through
-  // the Plan row instead of a code deploy.
-  voiceInvoiceLimit         Int?
-  staffLimit                Int?
-  manualInvoiceMonthlyLimit Int?
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
+  // invoiceQuota/staffQuota's enforcement (and the matching usage-display
+  // endpoints) via getEffectivePlan(), never hardcoded by plan name — keeps
+  // every cap admin-configurable through the Plan row instead of a code
+  // deploy.
+  //
+  // invoiceMonthlyLimit counts voice- and manually-created invoices
+  // TOGETHER against one combined monthly quota — previously this was two
+  // separate fields (a lifetime voice cap and a monthly manual cap); both
+  // are gone, replaced by this single field, because the business rule
+  // itself changed to "50 total invoices/month" rather than two
+  // independently-tracked caps.
+  invoiceMonthlyLimit Int?
+  staffLimit          Int?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   modules       PlanModule[]
   subscriptions Subscription[]
@@ -406,11 +420,11 @@ model SyncedInvoice {
   paymentMode     String
   status          String
   notes           String?
-  // Whether this invoice was created via voice billing — a plan's
-  // voiceInvoiceLimit (see Plan model) is enforced by counting these (see
-  // shop-voice.service.js), not by a separately-incremented counter, so the
-  // number is always exactly "how many voice invoices this shop actually
-  // has" rather than something a client could desync from reality.
+  // Whether this invoice was created via voice billing — purely
+  // informational/analytics now. A plan's invoiceMonthlyLimit (see Plan
+  // model) counts voice and manually-created invoices together, so this
+  // field no longer drives quota enforcement by itself (see
+  // invoiceQuota.js's countInvoicesThisMonth, which ignores it).
   isVoiceCreated  Boolean   @default(false)
   deletedAt       DateTime?
   localCreatedAt  DateTime

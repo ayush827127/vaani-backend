@@ -16,10 +16,25 @@ const mockTx = {
 const mockPrisma = {
   $transaction: jest.fn((fn) => fn(mockTx)),
   shopUserPermission: { findMany: jest.fn() },
+  // Used by getEffectivePlan (shop-status.service.js) and
+  // countInvoicesThisMonth (invoiceQuota.js) — both real, unmocked modules
+  // that syncData now calls through to for the combined invoice-quota
+  // check. Same jest.mock('../../config/prisma', ...) call below covers
+  // their import of it too, since it's the same resolved module path.
+  shop: { findUnique: jest.fn() },
+  plan: { findFirst: jest.fn() },
+  subscription: { update: jest.fn() },
+  syncedInvoice: { count: jest.fn() },
 };
 jest.mock('../../config/prisma', () => mockPrisma);
 
 const { syncData } = require('./shop-sync.service');
+
+// Unlimited by default (invoiceMonthlyLimit: null) so every existing test
+// below — none of which care about the invoice quota — is unaffected;
+// the dedicated "combined invoice quota" describe block overrides this to
+// a real capped plan.
+const UNLIMITED_PLAN = { name: 'Basic', invoiceMonthlyLimit: null };
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -29,6 +44,15 @@ beforeEach(() => {
   mockTx.syncedInventoryTransaction.findMany.mockResolvedValue([]);
   mockTx.syncedPaymentTransaction.findMany.mockResolvedValue([]);
   mockPrisma.shopUserPermission.findMany.mockResolvedValue([]); // no overrides, by default
+  mockPrisma.shop.findUnique.mockResolvedValue({
+    id: 'shop-1',
+    status: 'ACTIVE',
+    trialUsed: false,
+    subscriptions: [],
+    moduleOverrides: [],
+  });
+  mockPrisma.plan.findFirst.mockResolvedValue(UNLIMITED_PLAN);
+  mockPrisma.syncedInvoice.count.mockResolvedValue(0);
 });
 
 const baseItem = {
@@ -362,6 +386,137 @@ describe('invoice-number conflict detection', () => {
 
     expect(mockAuditRecord).not.toHaveBeenCalledWith(
       expect.objectContaining({ action: 'INVOICE_NUMBER_CONFLICT_DETECTED' })
+    );
+  });
+});
+
+describe('combined (voice + manual) monthly invoice quota', () => {
+  function invoiceWith(localId, invoiceNumber) {
+    return {
+      localId,
+      invoiceNumber,
+      customerName: 'Walk-in',
+      subtotal: 100,
+      discountType: 'none',
+      discountValue: 0,
+      discountAmount: 0,
+      gstAmount: 0,
+      grandTotal: 100,
+      receivedAmount: 100,
+      pendingAmount: 0,
+      paymentMode: 'cash',
+      status: 'paid',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+  }
+
+  test('an unlimited plan never rejects anything, however many invoices are pushed', async () => {
+    const invoices = [invoiceWith(1, 'INV-1'), invoiceWith(2, 'INV-2'), invoiceWith(3, 'INV-3')];
+    mockTx.syncedInvoice.findMany
+      .mockResolvedValueOnce([]) // conflict-detection query
+      .mockResolvedValueOnce([]) // upsertBatch existence check — none exist yet
+      .mockResolvedValueOnce(invoices.map((inv) => ({ id: `uuid-${inv.localId}`, localId: inv.localId })));
+
+    const result = await syncData('shop-1', { invoices });
+
+    expect(mockTx.syncedInvoice.createMany).toHaveBeenCalledWith({
+      data: expect.arrayContaining([
+        expect.objectContaining({ localId: 1 }),
+        expect.objectContaining({ localId: 2 }),
+        expect.objectContaining({ localId: 3 }),
+      ]),
+    });
+    expect(result.invoiceQuota).toBeNull();
+    expect(result.rejected).toBe(0);
+  });
+
+  test('a capped plan admits new invoices up to the remaining quota within one batch and rejects the rest', async () => {
+    mockPrisma.plan.findFirst.mockResolvedValue({ name: 'Basic', invoiceMonthlyLimit: 2 });
+    mockPrisma.syncedInvoice.count.mockResolvedValue(0); // nothing used yet this month
+
+    const invoices = [invoiceWith(1, 'INV-1'), invoiceWith(2, 'INV-2'), invoiceWith(3, 'INV-3')];
+    mockTx.syncedInvoice.findMany
+      .mockResolvedValueOnce([]) // conflict-detection query
+      .mockResolvedValueOnce([]) // upsertBatch existence check — all 3 would be creates
+      // Only the 2 actually admitted (localId 1, 2) exist after the upsert —
+      // the post-upsert lookup for invoice items only ever sees those.
+      .mockResolvedValueOnce([
+        { id: 'uuid-1', localId: 1 },
+        { id: 'uuid-2', localId: 2 },
+      ]);
+
+    const result = await syncData('shop-1', { invoices });
+
+    expect(mockTx.syncedInvoice.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({ localId: 1 }),
+        expect.objectContaining({ localId: 2 }),
+      ],
+    });
+    // The top-level `rejected` count stays permission-only (unchanged
+    // meaning) — quota rejections are reported exclusively via the new
+    // invoiceQuota field below, not folded into this one.
+    expect(result.rejected).toBe(0);
+    expect(result.invoiceQuota).toEqual({ rejected: 1, limit: 2, used: 2, remaining: 0 });
+  });
+
+  test('already-used-this-month usage counts against the batch — a shop with 49/50 used can only admit 1 more', async () => {
+    mockPrisma.plan.findFirst.mockResolvedValue({ name: 'Basic', invoiceMonthlyLimit: 50 });
+    mockPrisma.syncedInvoice.count.mockResolvedValue(49);
+
+    const invoices = [invoiceWith(1, 'INV-1'), invoiceWith(2, 'INV-2')];
+    mockTx.syncedInvoice.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'uuid-1', localId: 1 }]);
+
+    const result = await syncData('shop-1', { invoices });
+
+    expect(mockTx.syncedInvoice.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ localId: 1 })],
+    });
+    expect(result.invoiceQuota).toEqual({ rejected: 1, limit: 50, used: 50, remaining: 0 });
+  });
+
+  test('updating an already-synced invoice is never blocked by quota, even when the shop is already over its cap', async () => {
+    mockPrisma.plan.findFirst.mockResolvedValue({ name: 'Basic', invoiceMonthlyLimit: 50 });
+    mockPrisma.syncedInvoice.count.mockResolvedValue(50); // already at the cap
+
+    const invoice = invoiceWith(1, 'INV-1');
+    mockTx.syncedInvoice.findMany
+      .mockResolvedValueOnce([{ localId: 1, invoiceNumber: 'INV-1' }]) // conflict query finds only itself
+      .mockResolvedValueOnce([{ localId: 1 }]) // already exists -> update path, not a create
+      .mockResolvedValueOnce([{ id: 'uuid-1', localId: 1 }]);
+
+    const result = await syncData('shop-1', { invoices: [invoice] });
+
+    expect(mockTx.syncedInvoice.update).toHaveBeenCalled();
+    expect(mockTx.syncedInvoice.createMany).not.toHaveBeenCalled();
+    expect(result.rejected).toBe(0);
+    expect(result.invoiceQuota).toEqual({ rejected: 0, limit: 50, used: 50, remaining: 0 });
+  });
+
+  test('quota rejections are audited distinctly from permission rejections', async () => {
+    mockPrisma.plan.findFirst.mockResolvedValue({ name: 'Basic', invoiceMonthlyLimit: 0 });
+    mockPrisma.syncedInvoice.count.mockResolvedValue(0);
+
+    const invoice = invoiceWith(1, 'INV-1');
+    mockTx.syncedInvoice.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    await syncData('shop-1', { invoices: [invoice] });
+
+    expect(mockAuditRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'SYNC_RECORD_REJECTED_MONTHLY_INVOICE_LIMIT',
+        metadata: { localId: 1, limit: 0 },
+      })
+    );
+    expect(mockAuditRecord).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'SYNC_RECORD_REJECTED_INSUFFICIENT_PERMISSION' })
     );
   });
 });

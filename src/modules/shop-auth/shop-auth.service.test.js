@@ -1,7 +1,5 @@
 const mockPrisma = {
   shop: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
-  plan: { findUnique: jest.fn() },
-  subscription: { create: jest.fn() },
   user: { upsert: jest.fn() },
   shopUser: { create: jest.fn() },
 };
@@ -14,7 +12,24 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockPrisma.shop.findUnique.mockResolvedValue(null); // no existing shop, by default
   mockPrisma.shop.create.mockResolvedValue({ id: 'shop-1', phone: '9876543210' });
-  mockPrisma.plan.findUnique.mockResolvedValue(null); // skip trial-subscription branch
+  // Sane default so tests that don't care about the User/ShopUser bridge
+  // (e.g. the trial-related ones below) don't trip its own swallowed-error
+  // logging just because this mock was left returning undefined.
+  mockPrisma.user.upsert.mockResolvedValue({ id: 'user-1', phone: '9876543210' });
+});
+
+describe('register — no automatic trial subscription', () => {
+  test('a brand-new shop is created ACTIVE, with no Subscription row at all — trials are opt-in via trial.service.js', async () => {
+    await register({ name: 'ABC Store', ownerName: 'Ramesh', phone: '9876543210' });
+
+    expect(mockPrisma.shop.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'ACTIVE' }) })
+    );
+    // No subscription-related calls exist on mockPrisma at all any more —
+    // if register() ever reached for prisma.subscription or prisma.plan,
+    // this test file wouldn't even need updating to catch it: the mock
+    // object has no such keys, so a real call would throw "not a function".
+  });
 });
 
 describe('register — User/ShopUser bridge for new shops', () => {

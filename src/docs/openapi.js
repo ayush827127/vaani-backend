@@ -282,9 +282,11 @@ module.exports = {
             subscription: { type: 'object', nullable: true },
             effectivePlanName: { type: 'string', nullable: true },
             modules: { type: 'array', items: { type: 'string' } },
-            voiceInvoiceLimit: { type: 'integer', nullable: true },
+            invoiceMonthlyLimit: { type: 'integer', nullable: true, description: 'Combined voice + manual invoice cap for the current calendar month; null = unlimited' },
             staffLimit: { type: 'integer', nullable: true },
-            manualInvoiceMonthlyLimit: { type: 'integer', nullable: true },
+            trialUsed: { type: 'boolean', description: 'Whether this shop has ever started its one-time 14-day Pro trial' },
+            trialAvailable: { type: 'boolean', description: 'Whether POST /subscription/start-trial would succeed right now' },
+            trialEndsAt: { type: 'string', format: 'date-time', nullable: true, description: 'Set only while an in-force trial is the reason effectivePlanName is Pro' },
           },
         },
       }),
@@ -312,12 +314,15 @@ module.exports = {
       }),
       get: op({ summary: "List the caller's own payment claims", tag: 'Shop Self-Service Subscription' }),
     },
-    '/api/shop/subscription/voice-usage': {
-      get: op({ summary: "This shop's voice-invoice usage against its plan's quota", tag: 'Shop Self-Service Subscription' }),
-    },
-    '/api/shop/subscription/manual-invoice-usage': {
+    '/api/shop/subscription/invoice-usage': {
       get: op({
-        summary: "This shop's manual (non-voice) invoice usage this calendar month against its plan's quota",
+        summary: "This shop's combined (voice + manual) invoice usage this calendar month against its plan's quota",
+        tag: 'Shop Self-Service Subscription',
+      }),
+    },
+    '/api/shop/subscription/start-trial': {
+      post: op({
+        summary: "Start this shop's one-time 14-day Pro trial (see /me/status's trialAvailable for whether this would succeed)",
         tag: 'Shop Self-Service Subscription',
       }),
     },
@@ -356,6 +361,13 @@ module.exports = {
           type: 'object',
           properties: { name: { type: 'string' }, ownerName: { type: 'string' }, phone: { type: 'string' }, email: { type: 'string', nullable: true }, address: { type: 'string', nullable: true }, status: shopStatusEnum },
         },
+      }),
+    },
+    '/api/admin/shops/{id}/invoice-usage': {
+      get: op({
+        summary: "This shop's combined (voice + manual) invoice usage against its plan's monthly quota — admin-facing mirror of GET /api/shop/subscription/invoice-usage",
+        tag: 'Admin: Shops',
+        params: [idParam('id', 'Shop id')],
       }),
     },
     '/api/admin/shops/{id}/status': {

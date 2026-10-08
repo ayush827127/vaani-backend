@@ -31,12 +31,27 @@ async function getEffectivePlan(shopId) {
     throw new AppError('Shop not found', 404);
   }
 
-  const subscription = shop.subscriptions[0] || null;
+  let subscription = shop.subscriptions[0] || null;
 
   const isSubscriptionInForce =
     subscription &&
     (subscription.status === 'ACTIVE' || subscription.status === 'TRIAL') &&
     (!subscription.endDate || new Date(subscription.endDate) > new Date());
+
+  // Lazily correct a stale TRIAL row the first time anyone notices it's
+  // actually past its endDate — isSubscriptionInForce above already treats
+  // it as expired regardless (so entitlements are correct either way), but
+  // leaving the stored status as "TRIAL" forever would make the admin panel
+  // and any future query lie about it. Not a cron job: every read of this
+  // shop's status runs through here, so the correction happens at latest
+  // on the next time anyone checks.
+  if (subscription && subscription.status === 'TRIAL' && !isSubscriptionInForce) {
+    subscription = await prisma.subscription.update({
+      where: { id: subscription.id },
+      data: { status: 'EXPIRED' },
+      include: { plan: { include: withModules } },
+    });
+  }
 
   let effectivePlan = isSubscriptionInForce ? subscription.plan : null;
   if (!effectivePlan) {
@@ -64,17 +79,32 @@ async function getEffectivePlan(shopId) {
     moduleKeys.clear();
   }
 
+  // Mirrors trial.service.js's canStartTrial exactly (kept inline rather
+  // than imported, to avoid a circular require — trial.service.js already
+  // imports getEffectivePlan from this file): a shop can start its one
+  // trial only if it never has before, it isn't already mid-trial, and it
+  // doesn't already have a real paid Pro subscription in force. A shop
+  // that merely has an in-force *Basic* subscription (e.g. one it
+  // explicitly switched to) is still trial-eligible — only an existing
+  // Pro subscription or trial blocks it.
+  const hasBlockingSubscription =
+    isSubscriptionInForce &&
+    (subscription.status === 'TRIAL' || (subscription.status === 'ACTIVE' && subscription.plan.name === 'Pro'));
+  const trialAvailable = !shop.trialUsed && !hasBlockingSubscription;
+
   return {
     shop,
     subscription,
     isSubscriptionInForce,
     effectivePlan: isLockedOut ? null : effectivePlan,
     moduleKeys,
+    trialAvailable,
   };
 }
 
 async function getStatus(shopId) {
-  const { shop, subscription, effectivePlan, moduleKeys } = await getEffectivePlan(shopId);
+  const { shop, subscription, effectivePlan, moduleKeys, isSubscriptionInForce, trialAvailable } =
+    await getEffectivePlan(shopId);
 
   return {
     shopStatus: shop.status,
@@ -95,13 +125,20 @@ async function getStatus(shopId) {
     modules: Array.from(moduleKeys),
     // Resource caps in force right now, straight off the Plan row — null
     // means unlimited. Cheap to include here (no extra query, effectivePlan
-    // is already fetched) since these are static per-plan metadata, unlike
-    // the per-feature usage counts (getVoiceUsage/getStaffQuota/
-    // getManualInvoiceUsage), which each need their own count query and so
-    // stay as separate, less-frequently-polled endpoints.
-    voiceInvoiceLimit: effectivePlan?.voiceInvoiceLimit ?? null,
+    // is already fetched) since this is static per-plan metadata, unlike
+    // the per-feature usage counts (getInvoiceUsage/getStaffQuota), which
+    // each need their own count query and so stay as separate,
+    // less-frequently-polled endpoints.
+    invoiceMonthlyLimit: effectivePlan?.invoiceMonthlyLimit ?? null,
     staffLimit: effectivePlan?.staffLimit ?? null,
-    manualInvoiceMonthlyLimit: effectivePlan?.manualInvoiceMonthlyLimit ?? null,
+    // Trial state — trialUsed is permanent (see Shop.trialUsed's doc
+    // comment), trialAvailable is whether tapping "Start Trial" would
+    // actually succeed right now, and trialEndsAt is only present while
+    // an in-force trial is the reason effectivePlan is Pro.
+    trialUsed: shop.trialUsed,
+    trialAvailable,
+    trialEndsAt:
+      isSubscriptionInForce && subscription.status === 'TRIAL' ? subscription.endDate : null,
   };
 }
 

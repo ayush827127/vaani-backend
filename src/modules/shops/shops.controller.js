@@ -3,6 +3,7 @@ const { ok } = require('../../utils/apiResponse');
 const AppError = require('../../utils/AppError');
 const { parsePagination } = require('../../utils/pagination');
 const service = require('./shops.service');
+const { getInvoiceUsage } = require('../shop-subscription/shop-subscription.service');
 
 const list = asyncHandler(async (req, res) => {
   const { status, search } = req.query;
@@ -57,6 +58,14 @@ const removeLogo = asyncHandler(async (req, res) => {
   return ok(res, shop);
 });
 
+// Mirrors GET /api/shop/subscription/invoice-usage (the shop-facing
+// version) for the admin panel's subscription view — same underlying
+// getInvoiceUsage, just admin-authenticated instead of shop-authenticated.
+const invoiceUsage = asyncHandler(async (req, res) => {
+  const usage = await getInvoiceUsage(req.params.id);
+  return ok(res, usage);
+});
+
 module.exports = {
   list,
   getById,
@@ -67,4 +76,5 @@ module.exports = {
   removeModuleOverride,
   uploadLogo,
   removeLogo,
+  invoiceUsage,
 };

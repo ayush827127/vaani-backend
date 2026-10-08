@@ -11,10 +11,10 @@ const createSchema = z.object({
   isActive: z.boolean().optional(),
   moduleIds: z.array(z.string().uuid()).optional(),
   // Resource caps — null/omitted means unlimited. See the Plan model's doc
-  // comment in schema.prisma.
-  voiceInvoiceLimit: z.number().int().nonnegative().nullable().optional(),
+  // comment in schema.prisma. invoiceMonthlyLimit counts voice- and
+  // manually-created invoices together against one combined monthly quota.
+  invoiceMonthlyLimit: z.number().int().nonnegative().nullable().optional(),
   staffLimit: z.number().int().nonnegative().nullable().optional(),
-  manualInvoiceMonthlyLimit: z.number().int().nonnegative().nullable().optional(),
 });
 
 const updateSchema = createSchema.partial();

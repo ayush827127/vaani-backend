@@ -1,8 +1,7 @@
 const prisma = require('../../config/prisma');
 const AppError = require('../../utils/AppError');
 const { getEffectivePlan } = require('../shop-status/shop-status.service');
-const { countVoiceInvoices } = require('../../utils/voiceQuota');
-const { countManualInvoicesThisMonth } = require('../../utils/manualInvoiceQuota');
+const { countInvoicesThisMonth } = require('../../utils/invoiceQuota');
 
 const withModules = { modules: { include: { module: true } } };
 
@@ -18,9 +17,8 @@ async function listPlans() {
     price: p.price,
     billingCycle: p.billingCycle,
     modules: p.modules.map((pm) => pm.module.key),
-    voiceInvoiceLimit: p.voiceInvoiceLimit,
+    invoiceMonthlyLimit: p.invoiceMonthlyLimit,
     staffLimit: p.staffLimit,
-    manualInvoiceMonthlyLimit: p.manualInvoiceMonthlyLimit,
   }));
 }
 
@@ -79,25 +77,15 @@ async function listMyPaymentClaims(shopId) {
   });
 }
 
-// Server-computed voice-invoice usage — the app shows this rather than
-// trusting its own local count, for the same reason shop-voice.service.js's
-// quota check does: it's derived from SyncedInvoice rows actually in our
-// database, not from anything the client reports about itself.
-async function getVoiceUsage(shopId) {
+// Server-computed combined (voice + manual) invoice usage for the current
+// calendar month — the app shows this rather than trusting its own local
+// count, for the same reason shop-voice.service.js's quota check does:
+// it's derived from SyncedInvoice rows actually in our database, not from
+// anything the client reports about itself.
+async function getInvoiceUsage(shopId) {
   const { effectivePlan } = await getEffectivePlan(shopId);
-  const limit = effectivePlan?.voiceInvoiceLimit ?? null;
-  const used = await countVoiceInvoices(shopId);
-  return { used, limit, unlimited: limit == null };
-}
-
-// Server-computed manual-invoice usage for the current calendar month —
-// there's no server-side enforcement of this cap (see
-// manualInvoiceQuota.js's doc comment), but the figure shown is still
-// real, not self-reported.
-async function getManualInvoiceUsage(shopId) {
-  const { effectivePlan } = await getEffectivePlan(shopId);
-  const limit = effectivePlan?.manualInvoiceMonthlyLimit ?? null;
-  const used = await countManualInvoicesThisMonth(shopId);
+  const limit = effectivePlan?.invoiceMonthlyLimit ?? null;
+  const used = await countInvoicesThisMonth(shopId);
   return { used, limit, unlimited: limit == null };
 }
 
@@ -106,6 +94,5 @@ module.exports = {
   switchToFreePlan,
   createPaymentClaim,
   listMyPaymentClaims,
-  getVoiceUsage,
-  getManualInvoiceUsage,
+  getInvoiceUsage,
 };

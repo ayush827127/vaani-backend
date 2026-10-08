@@ -1,6 +1,7 @@
 const mockPrisma = {
   shop: { findUnique: jest.fn() },
   plan: { findFirst: jest.fn() },
+  subscription: { update: jest.fn() },
 };
 jest.mock('../../config/prisma', () => mockPrisma);
 
@@ -8,14 +9,13 @@ const { getEffectivePlan, getStatus } = require('./shop-status.service');
 
 // Matches withModules' shape: { modules: [{ module: { key } }] }. Resource
 // limits default to null (unlimited) unless a test's plan explicitly sets
-// one, matching how a real Pro/Advanced Plan row has them unset.
+// one, matching how a real Pro Plan row has them unset.
 function planWith(name, moduleKeys, limits = {}) {
   return {
     name,
     modules: moduleKeys.map((key) => ({ module: { key } })),
-    voiceInvoiceLimit: null,
+    invoiceMonthlyLimit: null,
     staffLimit: null,
-    manualInvoiceMonthlyLimit: null,
     ...limits,
   };
 }
@@ -23,12 +23,12 @@ function planWith(name, moduleKeys, limits = {}) {
 const BASIC_PLAN = planWith(
   'Basic',
   ['billing', 'inventory', 'customers', 'printer', 'notifications'],
-  { voiceInvoiceLimit: 50, staffLimit: 0, manualInvoiceMonthlyLimit: 50 }
+  { invoiceMonthlyLimit: 50, staffLimit: 0 }
 );
 const PRO_PLAN = planWith('Pro', ['billing', 'inventory', 'customers', 'printer', 'notifications', 'reports', 'ai_manager']);
 
-function shopWith({ status = 'ACTIVE', subscriptions = [], moduleOverrides = [] } = {}) {
-  return { id: 'shop-1', status, subscriptions, moduleOverrides };
+function shopWith({ status = 'ACTIVE', subscriptions = [], moduleOverrides = [], trialUsed = false } = {}) {
+  return { id: 'shop-1', status, subscriptions, moduleOverrides, trialUsed };
 }
 
 beforeEach(() => {
@@ -248,9 +248,11 @@ describe('getStatus — the public /me/status contract', () => {
       subscription: { status: 'ACTIVE', planName: 'Pro', endDate: null },
       effectivePlanName: 'Pro',
       modules: expect.arrayContaining(['billing', 'inventory', 'customers', 'printer', 'notifications', 'reports', 'ai_manager']),
-      voiceInvoiceLimit: null,
+      invoiceMonthlyLimit: null,
       staffLimit: null,
-      manualInvoiceMonthlyLimit: null,
+      trialUsed: false,
+      trialAvailable: false, // already has an active paid Pro subscription
+      trialEndsAt: null,
     });
   });
 
@@ -269,9 +271,8 @@ describe('getStatus — the public /me/status contract', () => {
 
     const status = await getStatus('shop-1');
 
-    expect(status.voiceInvoiceLimit).toBe(50);
+    expect(status.invoiceMonthlyLimit).toBe(50);
     expect(status.staffLimit).toBe(0);
-    expect(status.manualInvoiceMonthlyLimit).toBe(50);
   });
 
   test('a shop locked out (suspended) reports every limit as null, same as every module being cleared', async () => {
@@ -279,9 +280,8 @@ describe('getStatus — the public /me/status contract', () => {
 
     const status = await getStatus('shop-1');
 
-    expect(status.voiceInvoiceLimit).toBeNull();
+    expect(status.invoiceMonthlyLimit).toBeNull();
     expect(status.staffLimit).toBeNull();
-    expect(status.manualInvoiceMonthlyLimit).toBeNull();
   });
 
   test('an expired Pro subscription: subscription.planName still says "Pro" (billing history), but effectivePlanName says "Basic"', async () => {
@@ -313,5 +313,79 @@ describe('getStatus — the public /me/status contract', () => {
     expect(status.shopStatus).toBe('SUSPENDED');
     expect(status.effectivePlanName).toBeNull();
     expect(status.modules).toEqual([]);
+  });
+
+  describe('trial fields', () => {
+    test('a shop that never trialed and has no in-force subscription is trial-available', async () => {
+      mockPrisma.shop.findUnique.mockResolvedValue(shopWith({ subscriptions: [] }));
+
+      const status = await getStatus('shop-1');
+
+      expect(status.trialUsed).toBe(false);
+      expect(status.trialAvailable).toBe(true);
+      expect(status.trialEndsAt).toBeNull();
+    });
+
+    test('a shop already marked trialUsed is not trial-available even with nothing else in force', async () => {
+      mockPrisma.shop.findUnique.mockResolvedValue(shopWith({ subscriptions: [], trialUsed: true }));
+
+      const status = await getStatus('shop-1');
+
+      expect(status.trialAvailable).toBe(false);
+    });
+
+    test('a shop with an in-force Basic subscription is still trial-available — only Pro/trial block it', async () => {
+      mockPrisma.shop.findUnique.mockResolvedValue(
+        shopWith({ subscriptions: [{ status: 'ACTIVE', endDate: null, plan: BASIC_PLAN }] })
+      );
+
+      const status = await getStatus('shop-1');
+
+      expect(status.trialAvailable).toBe(true);
+    });
+
+    test('an in-force trial reports trialEndsAt and is not itself trial-available', async () => {
+      const endDate = new Date(Date.now() + 5 * 86400000);
+      mockPrisma.shop.findUnique.mockResolvedValue(
+        shopWith({ subscriptions: [{ status: 'TRIAL', endDate, plan: PRO_PLAN }] })
+      );
+
+      const status = await getStatus('shop-1');
+
+      expect(status.trialEndsAt).toEqual(endDate);
+      expect(status.trialAvailable).toBe(false);
+    });
+
+    test('a TRIAL subscription past its endDate is lazily flipped to EXPIRED and no longer reports trialEndsAt', async () => {
+      const pastEndDate = new Date(Date.now() - 86400000);
+      // trialUsed: true because startTrial() always sets it atomically with
+      // the TRIAL subscription row it creates — this fixture mirrors that
+      // real combination, not a hypothetical TRIAL row with trialUsed still
+      // false (which startTrial()'s own transaction guarantees can't happen).
+      mockPrisma.shop.findUnique.mockResolvedValue(
+        shopWith({
+          subscriptions: [{ id: 'sub-1', status: 'TRIAL', endDate: pastEndDate, plan: PRO_PLAN }],
+          trialUsed: true,
+        })
+      );
+      mockPrisma.subscription.update.mockResolvedValue({
+        id: 'sub-1',
+        status: 'EXPIRED',
+        endDate: pastEndDate,
+        plan: PRO_PLAN,
+      });
+
+      const status = await getStatus('shop-1');
+
+      expect(mockPrisma.subscription.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'sub-1' }, data: { status: 'EXPIRED' } })
+      );
+      expect(status.subscription.status).toBe('EXPIRED');
+      expect(status.effectivePlanName).toBe('Basic'); // already correct even before the flip
+      expect(status.trialEndsAt).toBeNull();
+      // A shop whose only-ever trial just expired has consumed it — the flip
+      // must never reset trialAvailable back to true.
+      expect(status.trialAvailable).toBe(false);
+    });
   });
 });

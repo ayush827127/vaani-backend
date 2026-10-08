@@ -8,13 +8,8 @@ jest.mock('../../config/prisma', () => mockPrisma);
 const mockGetEffectivePlan = jest.fn();
 jest.mock('../shop-status/shop-status.service', () => ({ getEffectivePlan: mockGetEffectivePlan }));
 
-const mockCountVoiceInvoices = jest.fn();
-jest.mock('../../utils/voiceQuota', () => ({ countVoiceInvoices: mockCountVoiceInvoices }));
-
-const mockCountManualInvoicesThisMonth = jest.fn();
-jest.mock('../../utils/manualInvoiceQuota', () => ({
-  countManualInvoicesThisMonth: mockCountManualInvoicesThisMonth,
-}));
+const mockCountInvoicesThisMonth = jest.fn();
+jest.mock('../../utils/invoiceQuota', () => ({ countInvoicesThisMonth: mockCountInvoicesThisMonth }));
 
 const service = require('./shop-subscription.service');
 
@@ -31,9 +26,8 @@ describe('listPlans', () => {
         price: 0,
         billingCycle: 'MONTHLY',
         modules: [{ module: { key: 'billing' } }],
-        voiceInvoiceLimit: 50,
+        invoiceMonthlyLimit: 50,
         staffLimit: 0,
-        manualInvoiceMonthlyLimit: 50,
       },
       {
         id: 'plan-pro',
@@ -41,57 +35,40 @@ describe('listPlans', () => {
         price: 99,
         billingCycle: 'MONTHLY',
         modules: [{ module: { key: 'billing' } }, { module: { key: 'reports' } }],
-        voiceInvoiceLimit: null,
+        invoiceMonthlyLimit: null,
         staffLimit: null,
-        manualInvoiceMonthlyLimit: null,
       },
     ]);
 
     const plans = await service.listPlans();
 
     expect(plans).toEqual([
-      expect.objectContaining({ name: 'Basic', voiceInvoiceLimit: 50, staffLimit: 0, manualInvoiceMonthlyLimit: 50 }),
-      expect.objectContaining({ name: 'Pro', voiceInvoiceLimit: null, staffLimit: null, manualInvoiceMonthlyLimit: null }),
+      expect.objectContaining({ name: 'Basic', invoiceMonthlyLimit: 50, staffLimit: 0 }),
+      expect.objectContaining({ name: 'Pro', invoiceMonthlyLimit: null, staffLimit: null }),
     ]);
   });
 });
 
-describe('getVoiceUsage', () => {
-  test('reports the real limit and usage for a capped plan', async () => {
-    mockGetEffectivePlan.mockResolvedValue({ effectivePlan: { name: 'Basic', voiceInvoiceLimit: 50 } });
-    mockCountVoiceInvoices.mockResolvedValue(12);
+describe('getInvoiceUsage', () => {
+  test('reports the real combined limit and this-month usage for a capped plan', async () => {
+    mockGetEffectivePlan.mockResolvedValue({ effectivePlan: { name: 'Basic', invoiceMonthlyLimit: 50 } });
+    mockCountInvoicesThisMonth.mockResolvedValue(12);
 
-    await expect(service.getVoiceUsage('shop-1')).resolves.toEqual({ used: 12, limit: 50, unlimited: false });
+    await expect(service.getInvoiceUsage('shop-1')).resolves.toEqual({ used: 12, limit: 50, unlimited: false });
   });
 
-  test('reports unlimited when the plan has no voiceInvoiceLimit', async () => {
-    mockGetEffectivePlan.mockResolvedValue({ effectivePlan: { name: 'Pro', voiceInvoiceLimit: null } });
-    mockCountVoiceInvoices.mockResolvedValue(500);
+  test('reports unlimited when the plan has no invoiceMonthlyLimit', async () => {
+    mockGetEffectivePlan.mockResolvedValue({ effectivePlan: { name: 'Pro', invoiceMonthlyLimit: null } });
+    mockCountInvoicesThisMonth.mockResolvedValue(500);
 
-    await expect(service.getVoiceUsage('shop-1')).resolves.toEqual({ used: 500, limit: null, unlimited: true });
+    await expect(service.getInvoiceUsage('shop-1')).resolves.toEqual({ used: 500, limit: null, unlimited: true });
   });
 
   test('a locked-out shop (no effective plan) reports unlimited rather than throwing', async () => {
     mockGetEffectivePlan.mockResolvedValue({ effectivePlan: null });
-    mockCountVoiceInvoices.mockResolvedValue(0);
+    mockCountInvoicesThisMonth.mockResolvedValue(0);
 
-    await expect(service.getVoiceUsage('shop-1')).resolves.toEqual({ used: 0, limit: null, unlimited: true });
-  });
-});
-
-describe('getManualInvoiceUsage', () => {
-  test('reports the real limit and this-month usage for a capped plan', async () => {
-    mockGetEffectivePlan.mockResolvedValue({ effectivePlan: { name: 'Basic', manualInvoiceMonthlyLimit: 50 } });
-    mockCountManualInvoicesThisMonth.mockResolvedValue(7);
-
-    await expect(service.getManualInvoiceUsage('shop-1')).resolves.toEqual({ used: 7, limit: 50, unlimited: false });
-  });
-
-  test('reports unlimited when the plan has no manualInvoiceMonthlyLimit', async () => {
-    mockGetEffectivePlan.mockResolvedValue({ effectivePlan: { name: 'Pro', manualInvoiceMonthlyLimit: null } });
-    mockCountManualInvoicesThisMonth.mockResolvedValue(200);
-
-    await expect(service.getManualInvoiceUsage('shop-1')).resolves.toEqual({ used: 200, limit: null, unlimited: true });
+    await expect(service.getInvoiceUsage('shop-1')).resolves.toEqual({ used: 0, limit: null, unlimited: true });
   });
 });
 

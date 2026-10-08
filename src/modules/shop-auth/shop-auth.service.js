@@ -2,16 +2,19 @@ const prisma = require('../../config/prisma');
 const AppError = require('../../utils/AppError');
 const { signShopToken } = require('../../utils/jwt');
 
-const TRIAL_DAYS = 14;
-const TRIAL_PLAN_NAME = 'Pro';
-
 async function register({ name, ownerName, phone, address }) {
   let shop = await prisma.shop.findUnique({ where: { phone } });
   let isNew = false;
 
   if (!shop) {
+    // No automatic trial subscription here any more — a new shop starts
+    // on Basic (shop-status.service.js's own fallback, no Subscription row
+    // needed for that) and opts into its one 14-day Pro trial explicitly
+    // via trial.service.js's startTrial, same as any existing shop. status:
+    // 'ACTIVE' (not 'TRIAL') because this shop isn't actually in a trial
+    // period yet — it just exists and hasn't started one.
     shop = await prisma.shop.create({
-      data: { name, ownerName, phone, address, status: 'TRIAL' },
+      data: { name, ownerName, phone, address, status: 'ACTIVE' },
     });
     isNew = true;
   } else {
@@ -22,15 +25,6 @@ async function register({ name, ownerName, phone, address }) {
   }
 
   if (isNew) {
-    const trialPlan = await prisma.plan.findUnique({ where: { name: TRIAL_PLAN_NAME } });
-    if (trialPlan) {
-      const endDate = new Date();
-      endDate.setDate(endDate.getDate() + TRIAL_DAYS);
-      await prisma.subscription.create({
-        data: { shopId: shop.id, planId: trialPlan.id, status: 'TRIAL', endDate },
-      });
-    }
-
     // Keeps the User/ShopUser model in sync for every shop created from
     // here on — Phase 1's backfill only covered shops that already existed
     // at that moment; without this, every later signup would never resolve
