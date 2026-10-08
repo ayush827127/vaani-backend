@@ -86,7 +86,14 @@ model Shop {
   upiId          String?
   categories     String[]   @default([])
   logoUrl        String?
-  status         ShopStatus @default(TRIAL)
+  // Account standing — SUSPENDED/CANCELLED are the only values that
+  // actually lock a shop out (see getEffectivePlan's isLockedOut); TRIAL
+  // and ACTIVE are treated identically everywhere. Defaults to ACTIVE, not
+  // TRIAL: a shop's own standing no longer has anything to do with
+  // whether it's on a Pro trial (see Subscription.status + trialUsed
+  // below for that) — this historically defaulted to TRIAL back when
+  // every new shop got an automatic Pro trial in lockstep.
+  status         ShopStatus @default(ACTIVE)
   // Whether this shop has ever started its one-time 14-day Pro trial —
   // checked by trial.service.js's canStartTrial/startTrial before granting
   // another. Deliberately a standalone flag rather than inferred from

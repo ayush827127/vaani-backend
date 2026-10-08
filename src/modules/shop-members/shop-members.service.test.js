@@ -157,6 +157,23 @@ describe('staff quota', () => {
     await expect(service.inviteMember(baseArgs)).rejects.toMatchObject({ status: 403 });
   });
 
+  test('getStaffQuota never counts a long-expired pending invitation — regression test for a real bug', async () => {
+    // Confirmed in production: a shop with zero real staff and one
+    // never-accepted invite from days earlier (past its 7-day expiresAt,
+    // but still status PENDING since nothing had flipped it to EXPIRED)
+    // showed as "1 of 0 staff used" in the app, even though the invite was
+    // dead and unacceptable. countStaffUsage's own invitation.count query
+    // must filter expiresAt > now, not just status === 'PENDING'.
+    mockBasicPlan();
+    mockPrisma.shopUser.count.mockResolvedValue(0);
+    mockPrisma.invitation.count.mockResolvedValue(0); // the mock itself returns the post-filter count
+
+    await expect(service.getStaffQuota('shop-1')).resolves.toEqual({ used: 0, limit: 0, unlimited: false });
+    expect(mockPrisma.invitation.count).toHaveBeenCalledWith({
+      where: { shopId: 'shop-1', status: 'PENDING', expiresAt: { gt: expect.any(Date) } },
+    });
+  });
+
   test('an admin-initiated invite is bound by the same cap as an in-app one', async () => {
     mockBasicPlan();
     mockPrisma.shopUser.findFirst.mockResolvedValue(null);
