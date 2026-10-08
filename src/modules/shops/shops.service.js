@@ -61,6 +61,22 @@ async function setStatus(id, status) {
   return prisma.shop.update({ where: { id }, data: { status } });
 }
 
+// Admin override, for support/QA — a shopkeeper can never do this
+// themselves (there's no shop-facing endpoint for it), by design: it's
+// what makes "one trial per shop, ever" actually mean ever. Clears
+// trialUsed AND removes any TRIAL-status Subscription row for the shop in
+// one transaction, so the shop is back to a genuinely clean slate (no
+// stale trial history sitting around claiming to still be the
+// "most-recent" row) rather than just flipping the flag and leaving a
+// dead TRIAL row behind.
+async function resetTrial(id) {
+  await getById(id);
+  return prisma.$transaction(async (tx) => {
+    await tx.subscription.deleteMany({ where: { shopId: id, status: 'TRIAL' } });
+    return tx.shop.update({ where: { id }, data: { trialUsed: false } });
+  });
+}
+
 async function setModuleOverride(shopId, moduleId, enabled) {
   await getById(shopId);
   return prisma.shopModuleOverride.upsert({
@@ -102,6 +118,7 @@ module.exports = {
   create,
   update,
   setStatus,
+  resetTrial,
   setModuleOverride,
   setLogo,
   clearLogo,

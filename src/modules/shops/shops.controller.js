@@ -31,6 +31,11 @@ const setStatus = asyncHandler(async (req, res) => {
   return ok(res, shop);
 });
 
+const resetTrial = asyncHandler(async (req, res) => {
+  const shop = await service.resetTrial(req.params.id);
+  return ok(res, shop);
+});
+
 const setModuleOverride = asyncHandler(async (req, res) => {
   const override = await service.setModuleOverride(
     req.params.id,
@@ -72,6 +77,7 @@ module.exports = {
   create,
   update,
   setStatus,
+  resetTrial,
   setModuleOverride,
   removeModuleOverride,
   uploadLogo,

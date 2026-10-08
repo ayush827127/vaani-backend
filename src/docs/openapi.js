@@ -378,6 +378,13 @@ module.exports = {
         body: { type: 'object', required: ['status'], properties: { status: shopStatusEnum } },
       }),
     },
+    '/api/admin/shops/{id}/reset-trial': {
+      post: op({
+        summary: "Admin override: clear a shop's trialUsed flag and delete its TRIAL subscription row(s), so it can start the 14-day Pro trial again — never reachable by the shop itself",
+        tag: 'Admin: Shops',
+        params: [idParam('id', 'Shop id')],
+      }),
+    },
     '/api/admin/shops/{id}/modules/{moduleId}': {
       patch: op({
         summary: 'Set a per-shop module override (on top of whatever the plan grants)',
@@ -578,7 +585,14 @@ module.exports = {
     '/api/admin/plans/{id}': {
       get: op({ summary: 'Get a plan', tag: 'Admin: Plans', params: [idParam('id', 'Plan id')] }),
       patch: op({ summary: 'Update a plan (all fields optional)', tag: 'Admin: Plans', params: [idParam('id', 'Plan id')] }),
-      delete: op({ summary: 'Delete a plan', tag: 'Admin: Plans', params: [idParam('id', 'Plan id')] }),
+      delete: op({ summary: 'Deactivate a plan (soft — isActive: false; keeps historical Subscription/PaymentClaim references intact)', tag: 'Admin: Plans', params: [idParam('id', 'Plan id')] }),
+    },
+    '/api/admin/plans/{id}/permanent': {
+      delete: op({
+        summary: 'Permanently delete a plan — refused with a 409 if any Subscription/PaymentClaim still references it; deactivate it instead in that case',
+        tag: 'Admin: Plans',
+        params: [idParam('id', 'Plan id')],
+      }),
     },
 
     '/api/admin/modules': {
@@ -619,6 +633,11 @@ module.exports = {
     '/api/admin/subscriptions/{id}': {
       patch: op({
         summary: 'Update a subscription (all fields optional; endDate accepts null to clear it)',
+        tag: 'Admin: Subscriptions',
+        params: [idParam('id', 'Subscription id')],
+      }),
+      delete: op({
+        summary: 'Permanently delete a subscription row (a real hard delete — nothing else references a Subscription by id)',
         tag: 'Admin: Subscriptions',
         params: [idParam('id', 'Subscription id')],
       }),

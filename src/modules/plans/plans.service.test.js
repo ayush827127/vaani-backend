@@ -1,6 +1,8 @@
 const mockPrisma = {
-  plan: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+  plan: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
   planModule: { deleteMany: jest.fn(), createMany: jest.fn() },
+  subscription: { count: jest.fn() },
+  paymentClaim: { count: jest.fn() },
   $transaction: jest.fn((fn) => fn(mockPrisma)),
 };
 jest.mock('../../config/prisma', () => mockPrisma);
@@ -18,9 +20,8 @@ describe('create', () => {
     await service.create({
       name: 'Starter',
       price: 49,
-      voiceInvoiceLimit: 100,
+      invoiceMonthlyLimit: 100,
       staffLimit: 1,
-      manualInvoiceMonthlyLimit: 80,
     });
 
     expect(mockPrisma.plan.create).toHaveBeenCalledWith(
@@ -28,9 +29,8 @@ describe('create', () => {
         data: expect.objectContaining({
           name: 'Starter',
           price: 49,
-          voiceInvoiceLimit: 100,
+          invoiceMonthlyLimit: 100,
           staffLimit: 1,
-          manualInvoiceMonthlyLimit: 80,
         }),
       })
     );
@@ -42,9 +42,8 @@ describe('create', () => {
     await service.create({ name: 'Unlimited', price: 299 });
 
     const data = mockPrisma.plan.create.mock.calls[0][0].data;
-    expect(data).not.toHaveProperty('voiceInvoiceLimit');
+    expect(data).not.toHaveProperty('invoiceMonthlyLimit');
     expect(data).not.toHaveProperty('staffLimit');
-    expect(data).not.toHaveProperty('manualInvoiceMonthlyLimit');
   });
 });
 
@@ -53,13 +52,49 @@ describe('update', () => {
     mockPrisma.plan.findUnique.mockResolvedValue({ id: 'plan-1', name: 'Basic' });
     mockPrisma.plan.update.mockResolvedValue({ id: 'plan-1' });
 
-    await service.update('plan-1', { staffLimit: null, manualInvoiceMonthlyLimit: 25 });
+    await service.update('plan-1', { staffLimit: null, invoiceMonthlyLimit: 25 });
 
     expect(mockPrisma.plan.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'plan-1' },
-        data: expect.objectContaining({ staffLimit: null, manualInvoiceMonthlyLimit: 25 }),
+        data: expect.objectContaining({ staffLimit: null, invoiceMonthlyLimit: 25 }),
       })
     );
+  });
+});
+
+describe('removePermanently', () => {
+  test('refuses with a 409 when a subscription still references the plan', async () => {
+    mockPrisma.plan.findUnique.mockResolvedValue({ id: 'plan-1', name: 'Free' });
+    mockPrisma.subscription.count.mockResolvedValue(3);
+    mockPrisma.paymentClaim.count.mockResolvedValue(0);
+
+    await expect(service.removePermanently('plan-1')).rejects.toMatchObject({ status: 409 });
+    expect(mockPrisma.plan.delete).not.toHaveBeenCalled();
+  });
+
+  test('refuses with a 409 when a payment claim still references the plan', async () => {
+    mockPrisma.plan.findUnique.mockResolvedValue({ id: 'plan-1', name: 'Free' });
+    mockPrisma.subscription.count.mockResolvedValue(0);
+    mockPrisma.paymentClaim.count.mockResolvedValue(1);
+
+    await expect(service.removePermanently('plan-1')).rejects.toMatchObject({ status: 409 });
+    expect(mockPrisma.plan.delete).not.toHaveBeenCalled();
+  });
+
+  test('hard-deletes a plan with zero references', async () => {
+    mockPrisma.plan.findUnique.mockResolvedValue({ id: 'plan-1', name: 'Unused' });
+    mockPrisma.subscription.count.mockResolvedValue(0);
+    mockPrisma.paymentClaim.count.mockResolvedValue(0);
+
+    await service.removePermanently('plan-1');
+
+    expect(mockPrisma.plan.delete).toHaveBeenCalledWith({ where: { id: 'plan-1' } });
+  });
+
+  test('rejects when the plan does not exist', async () => {
+    mockPrisma.plan.findUnique.mockResolvedValue(null);
+
+    await expect(service.removePermanently('plan-missing')).rejects.toMatchObject({ status: 404 });
   });
 });

@@ -43,6 +43,7 @@ router.get('/:id/invoice-usage', controller.invoiceUsage);
 router.post('/', validate(createSchema), controller.create);
 router.patch('/:id', validate(updateSchema), controller.update);
 router.patch('/:id/status', validate(statusSchema), controller.setStatus);
+router.post('/:id/reset-trial', controller.resetTrial);
 router.patch(
   '/:id/modules/:moduleId',
   validate(moduleOverrideSchema),

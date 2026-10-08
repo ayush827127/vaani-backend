@@ -44,4 +44,27 @@ async function remove(id) {
   return prisma.plan.update({ where: { id }, data: { isActive: false } });
 }
 
-module.exports = { list, getById, create, update, remove };
+// A genuine hard delete — unlike remove() above, which only deactivates
+// (the safe default, since Subscription/PaymentClaim rows commonly
+// reference a plan for billing history). Only allowed when nothing
+// actually references this plan any more; otherwise refuses with a clear
+// count rather than letting the database throw an opaque foreign-key
+// error, or silently cascading away real billing history. PlanModule rows
+// are the one thing that's always safe to take with it (onDelete: Cascade
+// in the schema — they're pure join rows, no history of their own).
+async function removePermanently(id) {
+  await getById(id);
+  const [subscriptionCount, claimCount] = await Promise.all([
+    prisma.subscription.count({ where: { planId: id } }),
+    prisma.paymentClaim.count({ where: { planId: id } }),
+  ]);
+  if (subscriptionCount > 0 || claimCount > 0) {
+    throw new AppError(
+      `Cannot permanently delete — ${subscriptionCount} subscription(s) and ${claimCount} payment claim(s) still reference this plan. Deactivate it instead to keep that history intact.`,
+      409
+    );
+  }
+  await prisma.plan.delete({ where: { id } });
+}
+
+module.exports = { list, getById, create, update, remove, removePermanently };

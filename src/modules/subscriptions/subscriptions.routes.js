@@ -38,5 +38,6 @@ router.use(requireAdmin);
 router.get('/shops/:shopId/subscriptions', controller.listForShop);
 router.post('/subscriptions', validate(createSchema), controller.create);
 router.patch('/subscriptions/:id', validate(updateSchema), controller.update);
+router.delete('/subscriptions/:id', controller.remove);
 
 module.exports = router;

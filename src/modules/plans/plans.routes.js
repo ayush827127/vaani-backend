@@ -28,5 +28,6 @@ router.get('/:id', controller.getById);
 router.post('/', validate(createSchema), controller.create);
 router.patch('/:id', validate(updateSchema), controller.update);
 router.delete('/:id', controller.remove);
+router.delete('/:id/permanent', controller.removePermanently);
 
 module.exports = router;

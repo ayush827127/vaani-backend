@@ -27,4 +27,9 @@ const remove = asyncHandler(async (req, res) => {
   return ok(res, plan);
 });
 
-module.exports = { list, getById, create, update, remove };
+const removePermanently = asyncHandler(async (req, res) => {
+  await service.removePermanently(req.params.id);
+  return ok(res, { removed: true });
+});
+
+module.exports = { list, getById, create, update, remove, removePermanently };

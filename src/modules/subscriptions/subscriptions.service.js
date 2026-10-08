@@ -31,4 +31,22 @@ async function update(id, data) {
   return prisma.subscription.update({ where: { id }, data, include: { plan: true } });
 }
 
-module.exports = { listForShop, create, update };
+// A real, hard delete — unlike Plan's soft "deactivate," nothing else in
+// the schema references a Subscription row by id (it's a leaf model: only
+// Shop/Plan point INTO it, never the reverse), so there's no history to
+// protect by keeping a tombstone around. Lets an admin fully remove a
+// mistaken or test subscription (e.g. a QA shop's trial row) rather than
+// being stuck with CANCELLED rows forever. If the row being deleted is the
+// shop's current in-force subscription, getEffectivePlan's own
+// "most-recent row" lookup simply falls through to whatever's next (or
+// the Basic fallback) on its very next read — nothing here needs to
+// special-case that.
+async function remove(id) {
+  const existing = await prisma.subscription.findUnique({ where: { id } });
+  if (!existing) {
+    throw new AppError('Subscription not found', 404);
+  }
+  await prisma.subscription.delete({ where: { id } });
+}
+
+module.exports = { listForShop, create, update, remove };

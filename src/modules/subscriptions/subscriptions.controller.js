@@ -17,4 +17,9 @@ const update = asyncHandler(async (req, res) => {
   return ok(res, subscription);
 });
 
-module.exports = { listForShop, create, update };
+const remove = asyncHandler(async (req, res) => {
+  await service.remove(req.params.id);
+  return ok(res, { removed: true });
+});
+
+module.exports = { listForShop, create, update, remove };
