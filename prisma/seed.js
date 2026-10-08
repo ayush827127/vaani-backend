@@ -33,6 +33,18 @@ const PLAN_PRICES = {
   Advanced: { price: 199, billingCycle: 'MONTHLY' },
 };
 
+// Resource caps — null means unlimited. These are the only numbers that
+// distinguish Basic from Pro/Advanced resource-wise (module access aside);
+// see the Plan model's doc comment in schema.prisma. Changing a number here
+// and reseeding is the admin-panel-free way to adjust a cap; the admin
+// panel's Plans page can also edit these directly on an existing plan
+// without reseeding.
+const PLAN_LIMITS = {
+  Basic: { voiceInvoiceLimit: 50, staffLimit: 0, manualInvoiceMonthlyLimit: 50 },
+  Pro: { voiceInvoiceLimit: null, staffLimit: null, manualInvoiceMonthlyLimit: null },
+  Advanced: { voiceInvoiceLimit: null, staffLimit: null, manualInvoiceMonthlyLimit: null },
+};
+
 // Retired plan names from the old two-tier (Free/Basic/Pro @ 499/999)
 // lineup — deactivated rather than deleted so any historical Subscription
 // row referencing one by FK stays intact; isActive: false just means the
@@ -54,8 +66,8 @@ async function main() {
   for (const [planName, moduleKeys] of Object.entries(PLAN_MODULES)) {
     const plan = await prisma.plan.upsert({
       where: { name: planName },
-      update: { ...PLAN_PRICES[planName], isActive: true },
-      create: { name: planName, ...PLAN_PRICES[planName] },
+      update: { ...PLAN_PRICES[planName], ...PLAN_LIMITS[planName], isActive: true },
+      create: { name: planName, ...PLAN_PRICES[planName], ...PLAN_LIMITS[planName] },
     });
 
     await prisma.planModule.deleteMany({ where: { planId: plan.id } });

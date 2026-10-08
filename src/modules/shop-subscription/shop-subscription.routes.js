@@ -35,5 +35,6 @@ router.post(
 );
 router.get('/payment-claims', requireShop, controller.listMyPaymentClaims);
 router.get('/subscription/voice-usage', requireShop, controller.getVoiceUsage);
+router.get('/subscription/manual-invoice-usage', requireShop, controller.getManualInvoiceUsage);
 
 module.exports = router;

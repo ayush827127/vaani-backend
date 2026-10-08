@@ -4,7 +4,7 @@ const auditLog = require('../../services/auditLog.service');
 const { hasPermission } = require('../../services/permissions');
 const { assertNotRemovingLastOwner, assertCanChangeRole } = require('../../services/ownerProtection');
 const { getEffectivePlan } = require('../shop-status/shop-status.service');
-const { BASIC_STAFF_LIMIT, countStaffUsage } = require('../../utils/staffQuota');
+const { countStaffUsage } = require('../../utils/staffQuota');
 
 // Same pattern shop-otp.service.js already validates phones with.
 const PHONE_REGEX = /^[6-9]\d{9}$/;
@@ -21,27 +21,29 @@ async function activeMembershipsForShop(shopId) {
 // pending invitations in particular are easy to miss client-side.
 async function getStaffQuota(shopId) {
   const { effectivePlan } = await getEffectivePlan(shopId);
-  const isBasic = effectivePlan?.name === 'Basic';
+  const limit = effectivePlan?.staffLimit ?? null;
   const used = await countStaffUsage(shopId);
-  return { used, limit: isBasic ? BASIC_STAFF_LIMIT : null, unlimited: !isBasic };
+  return { used, limit, unlimited: limit == null };
 }
 
-// Refuses a new invite once a Basic-plan shop has reached its staff cap —
-// checked here (inside inviteMember itself, not the controller) so it
-// applies uniformly whether the invite came from the in-app flow or the
-// admin panel's adminInitiated path. Applies regardless of which role is
-// being invited (MANAGER/CASHIER/OWNER) — Basic's cap is on total
-// additional staff, not any one role.
+// Refuses a new invite once a shop has reached its plan's staffLimit (null
+// = unlimited, 0 = no additional staff at all) — checked here (inside
+// inviteMember itself, not the controller) so it applies uniformly whether
+// the invite came from the in-app flow or the admin panel's adminInitiated
+// path. Applies regardless of which role is being invited
+// (MANAGER/CASHIER/OWNER) — the cap is on total additional staff, not any
+// one role.
 async function checkStaffQuota(shopId) {
   const { effectivePlan } = await getEffectivePlan(shopId);
-  if (!effectivePlan || effectivePlan.name !== 'Basic') return; // unlimited on Pro/Advanced
+  if (!effectivePlan || effectivePlan.staffLimit == null) return; // unlimited
 
   const used = await countStaffUsage(shopId);
-  if (used >= BASIC_STAFF_LIMIT) {
-    throw new AppError(
-      'Basic plan does not include additional staff members. Upgrade to Pro to invite your team.',
-      403
-    );
+  if (used >= effectivePlan.staffLimit) {
+    const message =
+      effectivePlan.staffLimit === 0
+        ? `${effectivePlan.name} plan does not include additional staff members. Upgrade your plan to invite your team.`
+        : `${effectivePlan.name} plan is limited to ${effectivePlan.staffLimit} additional staff member${effectivePlan.staffLimit === 1 ? '' : 's'}. Upgrade your plan to invite more.`;
+    throw new AppError(message, 403);
   }
 }
 

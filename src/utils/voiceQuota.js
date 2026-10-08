@@ -1,16 +1,15 @@
 const prisma = require('../config/prisma');
 
-// The Basic plan's voice-created-invoice cap — the one number both
-// shop-voice.service.js (enforcement, before each Groq call) and
-// shop-subscription.service.js (the usage figure the app displays) need to
-// agree on. Counted from SyncedInvoice rows actually in the database, never
-// from anything the client reports about itself.
-const BASIC_VOICE_INVOICE_LIMIT = 50;
-
+// Counted from SyncedInvoice rows actually in the database, never from
+// anything the client reports about itself. The cap itself now lives on the
+// Plan row (Plan.voiceInvoiceLimit, null = unlimited) — see
+// shop-voice.service.js's checkVoiceInvoiceQuota and
+// shop-subscription.service.js's getVoiceUsage, both of which read it off
+// the shop's effectivePlan rather than a hardcoded number.
 async function countVoiceInvoices(shopId) {
   return prisma.syncedInvoice.count({
     where: { shopId, isVoiceCreated: true, deletedAt: null },
   });
 }
 
-module.exports = { BASIC_VOICE_INVOICE_LIMIT, countVoiceInvoices };
+module.exports = { countVoiceInvoices };

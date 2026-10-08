@@ -1,7 +1,8 @@
 const prisma = require('../../config/prisma');
 const AppError = require('../../utils/AppError');
 const { getEffectivePlan } = require('../shop-status/shop-status.service');
-const { BASIC_VOICE_INVOICE_LIMIT, countVoiceInvoices } = require('../../utils/voiceQuota');
+const { countVoiceInvoices } = require('../../utils/voiceQuota');
+const { countManualInvoicesThisMonth } = require('../../utils/manualInvoiceQuota');
 
 const withModules = { modules: { include: { module: true } } };
 
@@ -17,6 +18,9 @@ async function listPlans() {
     price: p.price,
     billingCycle: p.billingCycle,
     modules: p.modules.map((pm) => pm.module.key),
+    voiceInvoiceLimit: p.voiceInvoiceLimit,
+    staffLimit: p.staffLimit,
+    manualInvoiceMonthlyLimit: p.manualInvoiceMonthlyLimit,
   }));
 }
 
@@ -81,9 +85,20 @@ async function listMyPaymentClaims(shopId) {
 // database, not from anything the client reports about itself.
 async function getVoiceUsage(shopId) {
   const { effectivePlan } = await getEffectivePlan(shopId);
-  const isBasic = effectivePlan?.name === 'Basic';
+  const limit = effectivePlan?.voiceInvoiceLimit ?? null;
   const used = await countVoiceInvoices(shopId);
-  return { used, limit: isBasic ? BASIC_VOICE_INVOICE_LIMIT : null, unlimited: !isBasic };
+  return { used, limit, unlimited: limit == null };
+}
+
+// Server-computed manual-invoice usage for the current calendar month —
+// there's no server-side enforcement of this cap (see
+// manualInvoiceQuota.js's doc comment), but the figure shown is still
+// real, not self-reported.
+async function getManualInvoiceUsage(shopId) {
+  const { effectivePlan } = await getEffectivePlan(shopId);
+  const limit = effectivePlan?.manualInvoiceMonthlyLimit ?? null;
+  const used = await countManualInvoicesThisMonth(shopId);
+  return { used, limit, unlimited: limit == null };
 }
 
 module.exports = {
@@ -92,4 +107,5 @@ module.exports = {
   createPaymentClaim,
   listMyPaymentClaims,
   getVoiceUsage,
+  getManualInvoiceUsage,
 };

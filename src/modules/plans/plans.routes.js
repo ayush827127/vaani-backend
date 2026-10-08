@@ -10,6 +10,11 @@ const createSchema = z.object({
   billingCycle: z.enum(['MONTHLY', 'YEARLY']).optional(),
   isActive: z.boolean().optional(),
   moduleIds: z.array(z.string().uuid()).optional(),
+  // Resource caps — null/omitted means unlimited. See the Plan model's doc
+  // comment in schema.prisma.
+  voiceInvoiceLimit: z.number().int().nonnegative().nullable().optional(),
+  staffLimit: z.number().int().nonnegative().nullable().optional(),
+  manualInvoiceMonthlyLimit: z.number().int().nonnegative().nullable().optional(),
 });
 
 const updateSchema = createSchema.partial();

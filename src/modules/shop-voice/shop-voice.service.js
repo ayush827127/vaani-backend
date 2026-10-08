@@ -1,24 +1,24 @@
 const AppError = require('../../utils/AppError');
 const env = require('../../config/env');
 const { getEffectivePlan } = require('../shop-status/shop-status.service');
-const { BASIC_VOICE_INVOICE_LIMIT, countVoiceInvoices } = require('../../utils/voiceQuota');
+const { countVoiceInvoices } = require('../../utils/voiceQuota');
 
-// Refuses further voice parsing once a Basic-plan shop has reached its
-// 50-voice-invoice cap — checked here, before the Groq call, rather than
-// left to the client, for two reasons: it's the one point in the voice
-// billing flow that's *always* a network round-trip to us anyway (parsing
-// needs the AI proxy), and the count itself comes from actually-synced
-// SyncedInvoice rows rather than anything the client reports about itself —
-// a tampered local counter on the phone can't move this number, only real
-// invoices landing in our database can.
+// Refuses further voice parsing once a shop has reached its plan's
+// voiceInvoiceLimit (null = unlimited) — checked here, before the Groq
+// call, rather than left to the client, for two reasons: it's the one
+// point in the voice billing flow that's *always* a network round-trip to
+// us anyway (parsing needs the AI proxy), and the count itself comes from
+// actually-synced SyncedInvoice rows rather than anything the client
+// reports about itself — a tampered local counter on the phone can't move
+// this number, only real invoices landing in our database can.
 async function checkVoiceInvoiceQuota(shopId) {
   const { effectivePlan } = await getEffectivePlan(shopId);
-  if (!effectivePlan || effectivePlan.name !== 'Basic') return; // unlimited on Pro/Advanced
+  if (!effectivePlan || effectivePlan.voiceInvoiceLimit == null) return; // unlimited
 
   const used = await countVoiceInvoices(shopId);
-  if (used >= BASIC_VOICE_INVOICE_LIMIT) {
+  if (used >= effectivePlan.voiceInvoiceLimit) {
     throw new AppError(
-      `Basic plan is limited to ${BASIC_VOICE_INVOICE_LIMIT} voice-created invoices. Upgrade to Pro for unlimited voice billing.`,
+      `${effectivePlan.name} plan is limited to ${effectivePlan.voiceInvoiceLimit} voice-created invoices. Upgrade for unlimited voice billing.`,
       403
     );
   }

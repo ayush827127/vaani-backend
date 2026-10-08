@@ -141,8 +141,16 @@ model Plan {
   price        Decimal      @db.Decimal(10, 2)
   billingCycle BillingCycle @default(MONTHLY)
   isActive     Boolean      @default(true)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  // Resource caps for this plan — null means unlimited. Read by
+  // voiceQuota/staffQuota/manualInvoiceQuota's enforcement (and the
+  // matching usage-display endpoints) via getEffectivePlan(), never
+  // hardcoded by plan name — keeps every cap admin-configurable through
+  // the Plan row instead of a code deploy.
+  voiceInvoiceLimit         Int?
+  staffLimit                Int?
+  manualInvoiceMonthlyLimit Int?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
 
   modules       PlanModule[]
   subscriptions Subscription[]
@@ -398,8 +406,8 @@ model SyncedInvoice {
   paymentMode     String
   status          String
   notes           String?
-  // Whether this invoice was created via voice billing — the Basic plan's
-  // 50-voice-invoice cap is enforced by counting these (see
+  // Whether this invoice was created via voice billing — a plan's
+  // voiceInvoiceLimit (see Plan model) is enforced by counting these (see
   // shop-voice.service.js), not by a separately-incremented counter, so the
   // number is always exactly "how many voice invoices this shop actually
   // has" rather than something a client could desync from reality.

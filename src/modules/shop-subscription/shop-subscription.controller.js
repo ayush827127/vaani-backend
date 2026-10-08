@@ -27,10 +27,16 @@ const getVoiceUsage = asyncHandler(async (req, res) => {
   return ok(res, usage);
 });
 
+const getManualInvoiceUsage = asyncHandler(async (req, res) => {
+  const usage = await service.getManualInvoiceUsage(req.shop.id);
+  return ok(res, usage);
+});
+
 module.exports = {
   listPlans,
   switchToFreePlan,
   createPaymentClaim,
   listMyPaymentClaims,
   getVoiceUsage,
+  getManualInvoiceUsage,
 };

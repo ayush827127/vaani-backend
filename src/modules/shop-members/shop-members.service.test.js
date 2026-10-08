@@ -124,7 +124,7 @@ describe('staff quota', () => {
       subscriptions: [], // no paid subscription in force -> falls back to Basic
       moduleOverrides: [],
     });
-    mockPrisma.plan.findFirst.mockResolvedValue({ name: 'Basic', modules: [] });
+    mockPrisma.plan.findFirst.mockResolvedValue({ name: 'Basic', modules: [], staffLimit: 0 });
   }
 
   test('a Basic-plan shop is blocked from inviting anyone at all', async () => {
@@ -177,6 +177,26 @@ describe('staff quota', () => {
 
   test('getStaffQuota reports unlimited for a Pro-plan shop', async () => {
     await expect(service.getStaffQuota('shop-1')).resolves.toEqual({ used: 0, limit: null, unlimited: true });
+  });
+
+  test('a plan with a positive, non-zero staffLimit allows invites below it and blocks at it', async () => {
+    mockPrisma.shop.findUnique.mockResolvedValue({
+      name: 'ABC Store',
+      ownerName: 'Ramesh',
+      status: 'ACTIVE',
+      subscriptions: [{ status: 'ACTIVE', endDate: null, plan: { name: 'Starter', modules: [], staffLimit: 2 } }],
+      moduleOverrides: [],
+    });
+    mockPrisma.shopUser.findFirst.mockResolvedValue(null);
+    mockPrisma.invitation.findFirst.mockResolvedValue(null);
+    mockPrisma.invitation.create.mockResolvedValue({ id: 'inv-1' });
+
+    mockPrisma.shopUser.count.mockResolvedValue(1);
+    mockPrisma.invitation.count.mockResolvedValue(0);
+    await expect(service.inviteMember(baseArgs)).resolves.toMatchObject({ id: 'inv-1' });
+
+    mockPrisma.shopUser.count.mockResolvedValue(2);
+    await expect(service.inviteMember(baseArgs)).rejects.toMatchObject({ status: 403 });
   });
 });
 

@@ -6,12 +6,25 @@ jest.mock('../../config/prisma', () => mockPrisma);
 
 const { getEffectivePlan, getStatus } = require('./shop-status.service');
 
-// Matches withModules' shape: { modules: [{ module: { key } }] }
-function planWith(name, moduleKeys) {
-  return { name, modules: moduleKeys.map((key) => ({ module: { key } })) };
+// Matches withModules' shape: { modules: [{ module: { key } }] }. Resource
+// limits default to null (unlimited) unless a test's plan explicitly sets
+// one, matching how a real Pro/Advanced Plan row has them unset.
+function planWith(name, moduleKeys, limits = {}) {
+  return {
+    name,
+    modules: moduleKeys.map((key) => ({ module: { key } })),
+    voiceInvoiceLimit: null,
+    staffLimit: null,
+    manualInvoiceMonthlyLimit: null,
+    ...limits,
+  };
 }
 
-const BASIC_PLAN = planWith('Basic', ['billing', 'inventory', 'customers', 'printer', 'notifications']);
+const BASIC_PLAN = planWith(
+  'Basic',
+  ['billing', 'inventory', 'customers', 'printer', 'notifications'],
+  { voiceInvoiceLimit: 50, staffLimit: 0, manualInvoiceMonthlyLimit: 50 }
+);
 const PRO_PLAN = planWith('Pro', ['billing', 'inventory', 'customers', 'printer', 'notifications', 'reports', 'ai_manager']);
 
 function shopWith({ status = 'ACTIVE', subscriptions = [], moduleOverrides = [] } = {}) {
@@ -235,6 +248,9 @@ describe('getStatus — the public /me/status contract', () => {
       subscription: { status: 'ACTIVE', planName: 'Pro', endDate: null },
       effectivePlanName: 'Pro',
       modules: expect.arrayContaining(['billing', 'inventory', 'customers', 'printer', 'notifications', 'reports', 'ai_manager']),
+      voiceInvoiceLimit: null,
+      staffLimit: null,
+      manualInvoiceMonthlyLimit: null,
     });
   });
 
@@ -246,6 +262,26 @@ describe('getStatus — the public /me/status contract', () => {
     expect(status.subscription).toBeNull();
     expect(status.effectivePlanName).toBe('Basic');
     expect(status.modules).toEqual(expect.arrayContaining(['billing', 'inventory', 'customers']));
+  });
+
+  test('a Basic shop sees its real resource caps, straight off the Plan row', async () => {
+    mockPrisma.shop.findUnique.mockResolvedValue(shopWith({ subscriptions: [] }));
+
+    const status = await getStatus('shop-1');
+
+    expect(status.voiceInvoiceLimit).toBe(50);
+    expect(status.staffLimit).toBe(0);
+    expect(status.manualInvoiceMonthlyLimit).toBe(50);
+  });
+
+  test('a shop locked out (suspended) reports every limit as null, same as every module being cleared', async () => {
+    mockPrisma.shop.findUnique.mockResolvedValue(shopWith({ status: 'SUSPENDED', subscriptions: [] }));
+
+    const status = await getStatus('shop-1');
+
+    expect(status.voiceInvoiceLimit).toBeNull();
+    expect(status.staffLimit).toBeNull();
+    expect(status.manualInvoiceMonthlyLimit).toBeNull();
   });
 
   test('an expired Pro subscription: subscription.planName still says "Pro" (billing history), but effectivePlanName says "Basic"', async () => {

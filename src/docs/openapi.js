@@ -282,6 +282,9 @@ module.exports = {
             subscription: { type: 'object', nullable: true },
             effectivePlanName: { type: 'string', nullable: true },
             modules: { type: 'array', items: { type: 'string' } },
+            voiceInvoiceLimit: { type: 'integer', nullable: true },
+            staffLimit: { type: 'integer', nullable: true },
+            manualInvoiceMonthlyLimit: { type: 'integer', nullable: true },
           },
         },
       }),
@@ -311,6 +314,12 @@ module.exports = {
     },
     '/api/shop/subscription/voice-usage': {
       get: op({ summary: "This shop's voice-invoice usage against its plan's quota", tag: 'Shop Self-Service Subscription' }),
+    },
+    '/api/shop/subscription/manual-invoice-usage': {
+      get: op({
+        summary: "This shop's manual (non-voice) invoice usage this calendar month against its plan's quota",
+        tag: 'Shop Self-Service Subscription',
+      }),
     },
 
     '/api/admin/auth/login': {
@@ -545,7 +554,12 @@ module.exports = {
         body: {
           type: 'object',
           required: ['name', 'price'],
-          properties: { name: { type: 'string' }, price: { type: 'number' }, billingCycle: { type: 'string', enum: ['MONTHLY', 'YEARLY'] }, isActive: { type: 'boolean' }, moduleIds: { type: 'array', items: { type: 'string', format: 'uuid' } } },
+          properties: {
+            name: { type: 'string' }, price: { type: 'number' }, billingCycle: { type: 'string', enum: ['MONTHLY', 'YEARLY'] }, isActive: { type: 'boolean' }, moduleIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
+            voiceInvoiceLimit: { type: 'integer', nullable: true, description: 'Lifetime cap on voice-created invoices; null = unlimited' },
+            staffLimit: { type: 'integer', nullable: true, description: 'Cap on additional staff invited beyond the owner; null = unlimited' },
+            manualInvoiceMonthlyLimit: { type: 'integer', nullable: true, description: 'Monthly cap on manually-created invoices; null = unlimited' },
+          },
         },
       }),
     },

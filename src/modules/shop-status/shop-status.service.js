@@ -93,6 +93,15 @@ async function getStatus(shopId) {
     // effectivePlan is "Basic").
     effectivePlanName: effectivePlan?.name ?? null,
     modules: Array.from(moduleKeys),
+    // Resource caps in force right now, straight off the Plan row — null
+    // means unlimited. Cheap to include here (no extra query, effectivePlan
+    // is already fetched) since these are static per-plan metadata, unlike
+    // the per-feature usage counts (getVoiceUsage/getStaffQuota/
+    // getManualInvoiceUsage), which each need their own count query and so
+    // stay as separate, less-frequently-polled endpoints.
+    voiceInvoiceLimit: effectivePlan?.voiceInvoiceLimit ?? null,
+    staffLimit: effectivePlan?.staffLimit ?? null,
+    manualInvoiceMonthlyLimit: effectivePlan?.manualInvoiceMonthlyLimit ?? null,
   };
 }
 
